@@ -4,6 +4,10 @@ All system-wide constants and settings are defined here.
 """
 
 import os
+from dotenv import load_dotenv
+
+# Load .env (if present) before anything else reads os.environ
+load_dotenv()
 
 # Force OpenCV to bypass buggy MSMF driver that causes black screens
 os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
@@ -66,7 +70,58 @@ FINGERPRINT_ORB_FEATURES = 3000      # Number of SIFT features to extract (was 1
 MAX_PIN_ATTEMPTS = 3
 PIN_LENGTH = 4
 SESSION_TIMEOUT = 30                  # Seconds before session expires
+CARD_ENTRY_TIMEOUT = 60                # Seconds to wait for card number entry
 AUTH_LOG_ENABLED = True
+
+# ============================================================
+# FRAUD DETECTION SETTINGS
+# ============================================================
+FRAUD_DATASET_DIR = os.path.join(BASE_DIR, "fraud_detection", "data")
+FRAUD_DATASET_PATH = os.path.join(FRAUD_DATASET_DIR, "transactions_dataset.csv")
+FRAUD_MODEL_DIR = os.path.join(BASE_DIR, "fraud_detection", "models")
+FRAUD_MODEL_PATH = os.path.join(FRAUD_MODEL_DIR, "best_model.joblib")
+FRAUD_MODEL_META_PATH = os.path.join(FRAUD_MODEL_DIR, "best_model_meta.json")
+FRAUD_LARGE_AMOUNT_THRESHOLD = 50000   # used only by the no-model rule-based fallback
+FRAUD_FREQUENCY_THRESHOLD = 5          # transactions/hour on one account
+FRAUD_MEDIUM_RISK_THRESHOLD = 0.4
+FRAUD_HIGH_RISK_THRESHOLD = 0.7
+FRAUD_BLOCK_HIGH_RISK = False           # default toggle state — logging only by default
+
+# ============================================================
+# ANALYTICS SETTINGS
+# ============================================================
+ANALYTICS_OUTPUT_DIR = os.path.join(BASE_DIR, "analytics", "output")
+
+# ============================================================
+# WEB APP SETTINGS
+# ============================================================
+# Dev-only default secret — override via the JWT_SECRET env var in production.
+JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-in-production")
+
+# ============================================================
+# AI ADVISOR (Groq — Llama 3 70B)
+# ============================================================
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL   = "llama-3.1-70b-versatile"
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = 60
+WEBAPP_CORS_ORIGINS = ["http://localhost:5173"]
+
+# ============================================================
+# PORTFOLIO OPTIMIZATION SETTINGS (Markowitz / MPT)
+# ============================================================
+# FD/Cash aren't market-traded — fixed assumed rates, near-zero volatility.
+PORTFOLIO_TICKERS = {
+    "equity": "^NSEI", "debt": "BND", "gold": "GLD", "mutual_funds": "VBINX"
+}
+PORTFOLIO_FD_RATE = 0.065
+PORTFOLIO_FD_VOLATILITY = 0.005
+PORTFOLIO_CASH_RATE = 0.035
+PORTFOLIO_CASH_VOLATILITY = 0.001
+PORTFOLIO_RISK_FREE_RATE = 0.04
+PORTFOLIO_VOLATILITY_CAPS = {"low": 0.06, "medium": 0.12, "high": 0.20}
+PORTFOLIO_HISTORY_PERIOD = "5y"
+PORTFOLIO_CACHE_HOURS = 24
 
 # ============================================================
 # UI SETTINGS
@@ -94,6 +149,7 @@ SIMULATED_FINGERPRINT_DELAY = 2       # Seconds to simulate scan time
 # Create directories if they don't exist
 # ============================================================
 for directory in [DATASET_DIR, ENCODINGS_DIR, LOG_DIR,
+                  FRAUD_DATASET_DIR, FRAUD_MODEL_DIR, ANALYTICS_OUTPUT_DIR,
                   os.path.dirname(DATABASE_PATH),
                   FINGERPRINT_DATASET_DIR]:
     os.makedirs(directory, exist_ok=True)

@@ -1,0 +1,338 @@
+:root {
+  --primary: #00D4AA;
+  --primary-hover: #00B894;
+  --secondary: #1A1A2E;
+  --accent: #E94560;
+  --accent-hover: #C0392B;
+  --success: #00D4AA;
+  --warning: #F5A623;
+  --text: #EAEAEA;
+  --muted: #7B8794;
+  --card: #16213E;
+  --card-border: #2A3A5C;
+  --font: "Segoe UI", system-ui, Roboto, sans-serif;
+
+  font-family: var(--font);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--secondary);
+  color: var(--text);
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+h1, h2 {
+  margin: 0 0 12px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error-text {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.success-text {
+  color: var(--success);
+  font-weight: 600;
+}
+
+/* ── Layout ─────────────────────────────────────────── */
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.centered-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .grid-2, .grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Navbar ─────────────────────────────────────────── */
+
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  background: #0D1B2A;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.navbar-brand {
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--primary);
+}
+
+.navbar-links {
+  display: flex;
+  gap: 22px;
+}
+
+.navbar-link {
+  color: var(--text);
+  font-weight: 500;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+}
+
+.navbar-link.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.navbar-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Cards ──────────────────────────────────────────── */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.login-card {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+}
+
+.login-title {
+  text-align: center;
+  color: var(--primary);
+  font-size: 26px;
+}
+
+.login-subtitle {
+  text-align: center;
+  color: var(--muted);
+  margin-top: -8px;
+  margin-bottom: 20px;
+}
+
+.balance-card {
+  text-align: center;
+}
+
+.balance-label {
+  color: var(--muted);
+  margin: 0;
+}
+
+.balance-amount {
+  font-size: 38px;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 4px 0;
+}
+
+.balance-meta {
+  color: var(--muted);
+  margin: 0;
+}
+
+.summary-card {
+  display: flex;
+  justify-content: space-between;
+  text-align: center;
+}
+
+.chart-card h2 {
+  font-size: 16px;
+}
+
+.quick-links {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.toggle-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ── Forms ──────────────────────────────────────────── */
+
+.field-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0A0F1A;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.inline-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.btn {
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: none;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 14px;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #0D1B2A;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-secondary {
+  background: var(--card-border);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  background: #3A4A6C;
+}
+
+/* ── Tables ─────────────────────────────────────────── */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+.table th, .table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--card-border);
+  font-size: 13px;
+}
+
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ── Tags ───────────────────────────────────────────── */
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag {
+  background: #0A0F1A;
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--primary);
+}
+
+/* ── Switch ─────────────────────────────────────────── */
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: var(--card-border);
+  border-radius: 24px;
+  transition: 0.2s;
+}
+
+.slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.2s;
+}
+
+.switch input:checked + .slider {
+  background-color: var(--primary);
+}
+
+.switch input:checked + .slider::before {
+  transform: translateX(20px);
+}

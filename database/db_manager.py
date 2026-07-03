@@ -7,6 +7,7 @@ import sqlite3
 import hashlib
 import os
 import pickle
+import random
 from typing import Optional, List, Dict, Any
 
 import config
@@ -28,6 +29,7 @@ class DatabaseManager:
         """Create and return a new database connection."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     def _initialize_db(self):
@@ -57,6 +59,129 @@ class DatabaseManager:
                     FOREIGN KEY (user_id) REFERENCES users(user_id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS accounts (
+                    account_id      TEXT PRIMARY KEY,
+                    user_id         TEXT NOT NULL,
+                    account_number  TEXT UNIQUE NOT NULL,
+                    account_type    TEXT NOT NULL DEFAULT 'savings',
+                    balance         REAL NOT NULL DEFAULT 0.0,
+                    currency        TEXT NOT NULL DEFAULT 'INR',
+                    status          TEXT NOT NULL DEFAULT 'active',
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cards (
+                    card_number     TEXT PRIMARY KEY,
+                    account_id      TEXT NOT NULL,
+                    user_id         TEXT NOT NULL,
+                    expiry_date     TEXT NOT NULL,
+                    cvv_hash        TEXT NOT NULL,
+                    card_status     TEXT NOT NULL DEFAULT 'active',
+                    issued_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (account_id) REFERENCES accounts(account_id),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS transactions (
+                    transaction_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    account_id           TEXT NOT NULL,
+                    txn_type             TEXT NOT NULL,
+                    amount               REAL NOT NULL,
+                    balance_after        REAL NOT NULL,
+                    counterparty_account TEXT,
+                    channel              TEXT NOT NULL DEFAULT 'atm',
+                    status               TEXT NOT NULL DEFAULT 'success',
+                    timestamp            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (account_id) REFERENCES accounts(account_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS biometric_profiles (
+                    profile_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id           TEXT NOT NULL,
+                    modality          TEXT NOT NULL,
+                    sample_count      INTEGER DEFAULT 0,
+                    last_verified_at  TIMESTAMP,
+                    last_confidence   REAL,
+                    enrollment_notes  TEXT,
+                    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS fraud_logs (
+                    fraud_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    transaction_id  INTEGER NOT NULL,
+                    risk_score      REAL NOT NULL,
+                    risk_category   TEXT NOT NULL,
+                    model_used      TEXT,
+                    flagged_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed        INTEGER DEFAULT 0,
+                    notes           TEXT,
+                    FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS investment_profiles (
+                    profile_id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id                   TEXT UNIQUE NOT NULL,
+                    risk_appetite             TEXT NOT NULL,
+                    investment_horizon_years  INTEGER,
+                    monthly_savings           REAL,
+                    available_balance         REAL,
+                    updated_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS portfolio_recommendations (
+                    recommendation_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile_id         INTEGER NOT NULL,
+                    equity_pct         REAL,
+                    debt_pct           REAL,
+                    gold_pct           REAL,
+                    fd_pct             REAL,
+                    cash_pct           REAL,
+                    mutual_funds_pct   REAL,
+                    expected_return    REAL,
+                    expected_risk      REAL,
+                    sharpe_ratio       REAL,
+                    generated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (profile_id) REFERENCES investment_profiles(profile_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS categories (
+                    name        TEXT PRIMARY KEY,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Migration: add `category` to transactions if it doesn't exist yet
+            # (CREATE TABLE IF NOT EXISTS won't retroactively add columns).
+            existing_cols = {row[1] for row in
+                             conn.execute("PRAGMA table_info(transactions)").fetchall()}
+            if "category" not in existing_cols:
+                conn.execute(
+                    "ALTER TABLE transactions ADD COLUMN category TEXT DEFAULT 'Other'"
+                )
+
+            # Seed default categories once.
+            count = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+            if count == 0:
+                default_categories = [
+                    "Food", "Travel", "Shopping", "Bills", "Healthcare",
+                    "Education", "Entertainment", "Investments", "Income", "Other"
+                ]
+                conn.executemany(
+                    "INSERT OR IGNORE INTO categories (name) VALUES (?)",
+                    [(c,) for c in default_categories]
+                )
+
             conn.commit()
             logger.system_event("Database initialized", self.db_path)
         except Exception as e:
@@ -263,5 +388,342 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to delete user: {e}")
             return False
+        finally:
+            conn.close()
+
+    # ── Accounts ──────────────────────────────────────────────
+
+    def create_account(self, user_id: str, account_type: str = "savings",
+                       currency: str = "INR") -> Optional[str]:
+        """Create a new account for an existing user."""
+        conn = self._get_connection()
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+            account_id = f"ACC{count + 1:04d}"
+            account_number = "".join(str(random.randint(0, 9)) for _ in range(12))
+            conn.execute(
+                """INSERT INTO accounts (account_id, user_id, account_number,
+                   account_type, currency) VALUES (?, ?, ?, ?, ?)""",
+                (account_id, user_id, account_number, account_type, currency)
+            )
+            conn.commit()
+            logger.success(f"Account created: {account_id} for {user_id}")
+            return account_id
+        except Exception as e:
+            logger.error(f"Failed to create account: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def get_account(self, account_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve an account record by account_id."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_accounts_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+        """Retrieve all accounts belonging to a user."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM accounts WHERE user_id = ?", (user_id,)
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def get_account_by_number(self, account_number: str) -> Optional[Dict[str, Any]]:
+        """Retrieve an account record by account_number."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM accounts WHERE account_number = ?", (account_number,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def update_account_balance(self, account_id: str, new_balance: float) -> bool:
+        """Update the stored balance for an account."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                "UPDATE accounts SET balance = ? WHERE account_id = ?",
+                (new_balance, account_id)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update account balance: {e}")
+            return False
+        finally:
+            conn.close()
+
+    # ── Cards ─────────────────────────────────────────────────
+
+    def generate_card_number(self) -> str:
+        """Generate a unique 16-digit Luhn-valid card number."""
+        conn = self._get_connection()
+        try:
+            while True:
+                base = "".join(str(random.randint(0, 9)) for _ in range(15))
+                digits = [int(d) for d in base] + [0]
+                odd_sum = sum(digits[-1::-2])
+                even_sum = sum(sum(divmod(d * 2, 10)) for d in digits[-2::-2])
+                check_digit = (10 - (odd_sum + even_sum) % 10) % 10
+                card_number = base + str(check_digit)
+
+                exists = conn.execute(
+                    "SELECT 1 FROM cards WHERE card_number = ?", (card_number,)
+                ).fetchone()
+                if not exists:
+                    return card_number
+        finally:
+            conn.close()
+
+    def create_card(self, account_id: str, user_id: str, expiry_date: str,
+                    cvv: str) -> Optional[str]:
+        """Issue a new card linked to an account."""
+        card_number = self.generate_card_number()
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO cards (card_number, account_id, user_id,
+                   expiry_date, cvv_hash) VALUES (?, ?, ?, ?, ?)""",
+                (card_number, account_id, user_id, expiry_date,
+                 self._hash_pin(cvv))
+            )
+            conn.commit()
+            logger.success(f"Card issued: {card_number} for account {account_id}")
+            return card_number
+        except Exception as e:
+            logger.error(f"Failed to create card: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def get_card(self, card_number: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a card record by card_number."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM cards WHERE card_number = ?", (card_number,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_cards_by_account(self, account_id: str) -> List[Dict[str, Any]]:
+        """Retrieve all cards linked to an account."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM cards WHERE account_id = ?", (account_id,)
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    # ── Transactions ──────────────────────────────────────────
+
+    def record_transaction(self, account_id: str, txn_type: str, amount: float,
+                           balance_after: float,
+                           counterparty_account: str = None,
+                           channel: str = "atm",
+                           status: str = "success",
+                           category: str = "Other") -> Optional[int]:
+        """Record a transaction against an account."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                """INSERT INTO transactions (account_id, txn_type, amount,
+                   balance_after, counterparty_account, channel, status, category)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (account_id, txn_type, amount, balance_after,
+                 counterparty_account, channel, status, category)
+            )
+            conn.commit()
+            logger.info(f"Transaction recorded: {txn_type} {amount} on {account_id}")
+            return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Failed to record transaction: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def get_transactions(self, account_id: str,
+                         limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieve recent transactions for an account."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM transactions WHERE account_id = ?
+                   ORDER BY timestamp DESC LIMIT ?""",
+                (account_id, limit)
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def get_categories(self) -> List[str]:
+        """Retrieve all available transaction categories (predefined + custom)."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT name FROM categories ORDER BY created_at"
+            ).fetchall()
+            return [row["name"] for row in rows]
+        finally:
+            conn.close()
+
+    def add_category(self, name: str) -> bool:
+        """Add a custom transaction category."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,)
+            )
+            conn.commit()
+            logger.success(f"Category added: {name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add category: {e}")
+            return False
+        finally:
+            conn.close()
+
+    # ── Fraud logs ────────────────────────────────────────────
+
+    def log_fraud(self, transaction_id: int, risk_score: float,
+                 risk_category: str, model_used: str,
+                 notes: str = "") -> bool:
+        """Log a fraud risk assessment for a transaction."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO fraud_logs (transaction_id, risk_score,
+                   risk_category, model_used, notes)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (transaction_id, risk_score, risk_category, model_used, notes)
+            )
+            conn.commit()
+            logger.warning(
+                f"Fraud logged for txn {transaction_id}: "
+                f"{risk_category} ({risk_score})"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to log fraud: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_fraud_logs(self, transaction_id: int = None,
+                       limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieve fraud log entries, optionally filtered by transaction."""
+        conn = self._get_connection()
+        try:
+            if transaction_id:
+                rows = conn.execute(
+                    """SELECT * FROM fraud_logs WHERE transaction_id = ?
+                       ORDER BY flagged_at DESC LIMIT ?""",
+                    (transaction_id, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM fraud_logs ORDER BY flagged_at DESC LIMIT ?",
+                    (limit,)
+                ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    # ── Investment profiles & portfolio recommendations ──────
+
+    def upsert_investment_profile(self, user_id: str, risk_appetite: str,
+                                  investment_horizon_years: int,
+                                  monthly_savings: float,
+                                  available_balance: float) -> bool:
+        """Create or update a user's investment profile."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO investment_profiles (user_id, risk_appetite,
+                   investment_horizon_years, monthly_savings, available_balance)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id) DO UPDATE SET
+                       risk_appetite = excluded.risk_appetite,
+                       investment_horizon_years = excluded.investment_horizon_years,
+                       monthly_savings = excluded.monthly_savings,
+                       available_balance = excluded.available_balance,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (user_id, risk_appetite, investment_horizon_years,
+                 monthly_savings, available_balance)
+            )
+            conn.commit()
+            logger.success(f"Investment profile saved for {user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save investment profile: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_investment_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a user's investment profile."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM investment_profiles WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def save_portfolio_recommendation(
+            self, profile_id: int, equity_pct: float = 0.0,
+            debt_pct: float = 0.0, gold_pct: float = 0.0,
+            fd_pct: float = 0.0, cash_pct: float = 0.0,
+            mutual_funds_pct: float = 0.0, expected_return: float = None,
+            expected_risk: float = None,
+            sharpe_ratio: float = None) -> Optional[int]:
+        """Save a generated portfolio allocation for an investment profile."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                """INSERT INTO portfolio_recommendations (profile_id,
+                   equity_pct, debt_pct, gold_pct, fd_pct, cash_pct,
+                   mutual_funds_pct, expected_return, expected_risk,
+                   sharpe_ratio)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (profile_id, equity_pct, debt_pct, gold_pct, fd_pct,
+                 cash_pct, mutual_funds_pct, expected_return,
+                 expected_risk, sharpe_ratio)
+            )
+            conn.commit()
+            logger.success(f"Portfolio recommendation saved for profile {profile_id}")
+            return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Failed to save portfolio recommendation: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def get_latest_portfolio_recommendation(
+            self, profile_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieve the most recent portfolio recommendation for a profile."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                """SELECT * FROM portfolio_recommendations
+                   WHERE profile_id = ? ORDER BY generated_at DESC LIMIT 1""",
+                (profile_id,)
+            ).fetchone()
+            return dict(row) if row else None
         finally:
             conn.close()

@@ -58,13 +58,19 @@ class ATMInterface:
         self.fp_image_path = None
         self.fp_event = threading.Event()
 
+        # Card entry dialog state
+        self.card_number_value = None
+        self.card_event = threading.Event()
+
         # Stage display data
         self.stages_info = {
             AuthStage.IDLE: ("⏳", "Ready", "Insert card or begin authentication"),
+            AuthStage.CARD_INSERTED: ("💳", "Card Inserted", "Reading card..."),
             AuthStage.FACE_SCAN: ("👤", "Face Scan", "Look at the camera..."),
             AuthStage.LIVENESS_CHECK: ("👁️", "Liveness Check", "Please blink naturally"),
             AuthStage.FINGERPRINT_SCAN: ("🔐", "Fingerprint", "Place finger on sensor"),
             AuthStage.IDENTITY_FUSION: ("🔄", "Verifying", "Cross-checking identities..."),
+            AuthStage.CARD_VERIFICATION: ("🪪", "Card Owner Check", "Matching identity to card..."),
             AuthStage.PIN_ENTRY: ("🔢", "PIN Entry", "Enter your 4-digit PIN"),
             AuthStage.GRANTED: ("✅", "Granted", "Authentication successful!"),
             AuthStage.DENIED: ("❌", "Denied", "Authentication failed"),
@@ -222,12 +228,14 @@ class ATMInterface:
         # Pipeline steps
         self.step_cards = {}
         steps = [
-            ("face", "1", "Face Recognition", "Identify user via webcam"),
-            ("liveness", "2", "Liveness Detection", "Anti-spoofing check"),
-            ("fingerprint", "3", "Fingerprint Scan",
+            ("card", "1", "Insert Card", "Enter your card number"),
+            ("face", "2", "Face Recognition", "Identify user via webcam"),
+            ("liveness", "3", "Liveness Detection", "Anti-spoofing check"),
+            ("fingerprint", "4", "Fingerprint Scan",
              "Verify via image scan" if config.SOFTWARE_FINGERPRINT else "Verify via R307S sensor"),
-            ("fusion", "4", "Identity Fusion", "Cross-match biometrics"),
-            ("pin", "5", "PIN Verification", "Enter 4-digit PIN code"),
+            ("fusion", "5", "Identity Fusion", "Cross-match biometrics"),
+            ("card_verify", "6", "Verify Card Owner", "Match identity to card"),
+            ("pin", "7", "PIN Verification", "Enter 4-digit PIN code"),
         ]
 
         for key, num, title, desc in steps:
@@ -456,6 +464,37 @@ class ATMInterface:
         start_time = time.time()
 
         try:
+            # ─── STAGE 0: Insert Card / Retrieve Customer ──
+            self._ui_update_stage("card", "active", "Insert your card...")
+            self.current_stage = AuthStage.CARD_INSERTED
+
+            self.card_number_value = None
+            self.card_event.clear()
+            self.root.after(0, self._show_card_dialog)
+            self.card_event.wait(timeout=config.CARD_ENTRY_TIMEOUT)
+
+            card_number = self.card_number_value
+            if not card_number:
+                self._ui_update_stage("card", "failed", "No card inserted")
+                self._show_result("denied", "Card Required",
+                                  "No card was inserted.")
+                self._finish_auth()
+                return
+
+            card = self.db.get_card(card_number)
+            if not card or card["card_status"] != "active":
+                self._ui_update_stage("card", "failed", "Invalid or inactive card")
+                self._show_result("denied", "Invalid Card",
+                                  "Card not recognized or inactive.")
+                self._finish_auth()
+                return
+
+            customer = self.db.get_user(card["user_id"])
+            expected_user_id = card["user_id"]
+            self._ui_update_stage("card", "passed",
+                                  f"Card OK — {customer['name'] if customer else expected_user_id}")
+            time.sleep(0.5)
+
             # Initialize recognizer if needed
             if not self.face_recognizer.is_loaded:
                 self.face_recognizer.load_encodings()
@@ -661,6 +700,31 @@ class ATMInterface:
 
             time.sleep(0.5)
 
+            # ─── STAGE 4.5: Verify Card Owner ──────────────
+            self._ui_update_stage("card_verify", "active",
+                                  "Confirming card ownership...")
+            self.current_stage = AuthStage.CARD_VERIFICATION
+            time.sleep(0.3)
+
+            if face_id == expected_user_id:
+                self._ui_update_stage("card_verify", "passed",
+                                      "Card owner confirmed ✓")
+                self.db.log_auth_event(face_id, "card_verification", "success")
+            else:
+                self._ui_update_stage("card_verify", "failed",
+                                      "Card does not belong to this user!")
+                self._show_result("denied", "Card Owner Mismatch",
+                                  "This card does not belong to the "
+                                  "authenticated person.")
+                self.db.log_auth_event(
+                    face_id, "card_verification", "mismatch",
+                    f"card_user={expected_user_id}, identified={face_id}"
+                )
+                self._finish_auth()
+                return
+
+            time.sleep(0.5)
+
             # ─── STAGE 5: PIN Entry ───────────────────────
             self._ui_update_stage("pin", "active", "Enter your PIN")
             self.current_stage = AuthStage.PIN_ENTRY
@@ -695,8 +759,11 @@ class ATMInterface:
 
             # ─── ACCESS GRANTED ───────────────────────
             duration = time.time() - start_time
-            self._show_result("granted", f"Welcome, {user_name}!",
-                              f"Authenticated in {duration:.1f}s")
+            self._show_result(
+                "granted", f"Welcome, {user_name}!",
+                f"Authenticated in {duration:.1f}s — manage your account on "
+                f"the SmartBank web portal."
+            )
             self.db.update_last_login(face_id)
             self.db.log_auth_event(face_id, "session", "granted",
                                    f"duration={duration:.1f}s")
@@ -714,6 +781,19 @@ class ATMInterface:
         self.root.after(0, lambda: self.start_btn.configure(
             state="normal", text="▶  Start Authentication"
         ))
+
+    # ═══════════════════════════════════════════════════════════
+    # CARD ENTRY DIALOG
+    # ═══════════════════════════════════════════════════════════
+
+    def _show_card_dialog(self):
+        """Show a modal card-number entry dialog (simulates insert/swipe)."""
+        result = ctk.CTkInputDialog(
+            text="Insert / Swipe Card — Enter Card Number:",
+            title="Insert Card"
+        ).get_input()
+        self.card_number_value = result
+        self.card_event.set()
 
     # ═══════════════════════════════════════════════════════════
     # PIN ENTRY DIALOG
@@ -1112,10 +1192,12 @@ class ATMInterface:
             card["title"].configure(text_color="#8899AA")
             # Restore original descriptions
             original_descs = {
+                "card": "Enter your card number",
                 "face": "Identify user via webcam",
                 "liveness": "Anti-spoofing check",
                 "fingerprint": "Verify via image scan" if config.SOFTWARE_FINGERPRINT else "Verify via R307S sensor",
                 "fusion": "Cross-match biometrics",
+                "card_verify": "Match identity to card",
                 "pin": "Enter 4-digit PIN code"
             }
             card["desc"].configure(

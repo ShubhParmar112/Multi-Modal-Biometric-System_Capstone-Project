@@ -10,11 +10,17 @@ Usage:
     python main.py --list-ports     → List available serial ports
     python main.py --simulate       → Run in simulation mode (no hardware)
     python main.py --test           → Run system self-test
+    python main.py --bank USR001    → Open banking menu for a user
+    python main.py --train-fraud-model → Train/select the fraud detection model
+    python main.py --fraud-logs     → Show recent fraud log entries
+    python main.py --analytics USR001 → Show monthly report + save charts
 """
 
 import sys
 import os
 import argparse
+import random
+from datetime import datetime, timedelta
 
 # Force UTF-8 encoding for standard output to support emojis/box-drawing characters on Windows
 if sys.platform == 'win32':
@@ -31,6 +37,10 @@ from face_recognition_module.dataset_collector import DatasetCollector
 from face_recognition_module.face_encoder import FaceEncoder
 from face_recognition_module.face_recognizer import FaceRecognizer
 from fingerprint_module.serial_handler import SerialHandler
+from banking.account_manager import BankingService
+from fraud_detection import train as fraud_train
+from analytics.reports import FinanceAnalytics
+from analytics import charts as analytics_charts
 
 
 def enroll_user():
@@ -200,6 +210,11 @@ def enroll_user():
     )
 
     if success:
+        account_id = db.create_account(user_id)
+        expiry = (datetime.now() + timedelta(days=5 * 365)).strftime("%m/%y")
+        cvv = f"{random.randint(0, 999):03d}"
+        card_number = db.create_card(account_id, user_id, expiry, cvv)
+
         print("\n" + "=" * 50)
         print("   ✅ ENROLLMENT SUCCESSFUL!")
         print("=" * 50)
@@ -208,6 +223,9 @@ def enroll_user():
         print(f"   Fingerprint   : ID {fingerprint_id}")
         print(f"   Face Images   : {user_dir}")
         print(f"   PIN           : {'*' * config.PIN_LENGTH}")
+        print(f"   Account ID    : {account_id}")
+        print(f"   Card Number   : {card_number}")
+        print(f"   CVV           : {cvv}")
         print("=" * 50 + "\n")
     else:
         logger.error("Failed to save user to database")
@@ -250,6 +268,185 @@ def list_users():
               f"{user['fingerprint_id']:<8} {user['created_at']:<20}")
     print("=" * 60)
     print(f"  Total: {len(users)} user(s)\n")
+
+
+def _choose_category(db: DatabaseManager) -> str:
+    """Print the available categories and let the user pick one, or add a new one."""
+    categories = db.get_categories()
+    print("\n  Categories:")
+    for i, name in enumerate(categories, start=1):
+        print(f"    {i}) {name}")
+    print(f"    {len(categories) + 1}) Add new category")
+
+    choice = input("  Choose a category: ").strip()
+    try:
+        idx = int(choice)
+    except ValueError:
+        return "Other"
+
+    if 1 <= idx <= len(categories):
+        return categories[idx - 1]
+    if idx == len(categories) + 1:
+        new_name = input("  New category name: ").strip()
+        if new_name:
+            db.add_category(new_name)
+            return new_name
+
+    return "Other"
+
+
+def bank_menu(user_id: str):
+    """Interactive CLI banking menu for an enrolled user (PIN-gated)."""
+    db = DatabaseManager()
+    user = db.get_user(user_id)
+    if not user:
+        logger.error(f"No such user: {user_id}")
+        return
+
+    pin = input(f"  Enter PIN for {user_id}: ").strip()
+    if not db.verify_pin(user_id, pin):
+        logger.error("Incorrect PIN")
+        return
+
+    banking = BankingService(db)
+
+    while True:
+        print("\n" + "=" * 40)
+        print(f"  BANKING MENU — {user['name']}")
+        print("=" * 40)
+        print("  1) Balance Inquiry")
+        print("  2) Deposit")
+        print("  3) Withdraw")
+        print("  4) Transfer")
+        print("  5) Mini Statement")
+        print("  6) Exit")
+        print(f"  7) Toggle Fraud Blocking (currently "
+              f"{'ON' if banking.block_high_risk else 'OFF'})")
+        print("  8) Personal Finance Analytics")
+        choice = input("  Choose an option: ").strip()
+
+        if choice == "1":
+            balance = banking.get_balance(user_id)
+            print(f"\n  Balance: {balance}")
+
+        elif choice == "2":
+            amount = float(input("  Amount to deposit: ").strip())
+            success, message, balance = banking.deposit(user_id, amount)
+            print(f"\n  {message} (Balance: {balance})" if success else f"\n  {message}")
+
+        elif choice == "3":
+            amount = float(input("  Amount to withdraw: ").strip())
+            category = _choose_category(db)
+            success, message, balance = banking.withdraw(user_id, amount, category=category)
+            print(f"\n  {message} (Balance: {balance})" if success else f"\n  {message}")
+
+        elif choice == "4":
+            to_account = input("  Destination account number: ").strip()
+            amount = float(input("  Amount to transfer: ").strip())
+            category = _choose_category(db)
+            success, message, balance = banking.transfer(user_id, to_account, amount, category=category)
+            print(f"\n  {message} (Balance: {balance})" if success else f"\n  {message}")
+
+        elif choice == "5":
+            statement = banking.get_mini_statement(user_id)
+            if not statement:
+                print("\n  No transactions found.")
+            else:
+                print(f"\n  {'Type':<14} {'Category':<14} {'Amount':<12} "
+                      f"{'Balance':<12} {'Timestamp':<20}")
+                print("  " + "─" * 72)
+                for txn in statement:
+                    print(f"  {txn['txn_type']:<14} {txn['category']:<14} "
+                          f"{txn['amount']:<12} {txn['balance_after']:<12} "
+                          f"{txn['timestamp']:<20}")
+
+        elif choice == "6":
+            print("\n  Logged out.\n")
+            break
+
+        elif choice == "7":
+            banking.set_fraud_blocking(not banking.block_high_risk)
+            print(f"\n  Fraud blocking is now "
+                  f"{'ON' if banking.block_high_risk else 'OFF'}.")
+
+        elif choice == "8":
+            show_analytics(user_id)
+
+        else:
+            print("\n  Invalid option.")
+
+
+def train_fraud_model():
+    """Train Isolation Forest, LOF, and XGBoost; keep whichever wins on F1."""
+    print("\n" + "=" * 50)
+    print("   FRAUD MODEL TRAINING")
+    print("=" * 50 + "\n")
+
+    results, best_name = fraud_train.train_and_select_best()
+
+    print(f"  {'Model':<22} {'F1':<8} {'Precision':<12} {'Recall':<8}")
+    print("  " + "─" * 50)
+    for name, metrics in results.items():
+        marker = " *" if name == best_name else ""
+        print(f"  {name:<22} {metrics['f1']:<8} "
+              f"{metrics['precision']:<12} {metrics['recall']:<8}{marker}")
+    print(f"\n  Winner: {best_name}\n")
+
+
+def fraud_logs_report():
+    """Display recent fraud log entries."""
+    db = DatabaseManager()
+    logs = db.get_fraud_logs(limit=20)
+
+    if not logs:
+        print("\n  No fraud log entries found.\n")
+        return
+
+    print("\n" + "=" * 70)
+    print("  RECENT FRAUD LOGS")
+    print("=" * 70)
+    print(f"  {'Txn ID':<8} {'Score':<8} {'Category':<10} "
+          f"{'Model':<22} {'Flagged At':<20}")
+    print("  " + "─" * 66)
+    for log in logs:
+        print(f"  {log['transaction_id']:<8} {log['risk_score']:<8} "
+              f"{log['risk_category']:<10} {log['model_used']:<22} "
+              f"{log['flagged_at']:<20}")
+    print("=" * 70)
+    print(f"  Total: {len(logs)} entr{'y' if len(logs) == 1 else 'ies'}\n")
+
+
+def show_analytics(user_id: str):
+    """Print the current month's finance report and save visualization charts."""
+    db = DatabaseManager()
+    if not db.get_user(user_id):
+        logger.error(f"No such user: {user_id}")
+        return
+
+    analytics = FinanceAnalytics(db)
+    report = analytics.monthly_report(user_id)
+
+    print("\n" + "=" * 50)
+    print(f"   PERSONAL FINANCE REPORT — {report['month']}")
+    print("=" * 50)
+    print(f"   Total Income   : {report['total_income']}")
+    print(f"   Total Expense  : {report['total_expense']}")
+    print(f"   Net Savings    : {report['net_savings']}")
+    print("-" * 50)
+    print("   Category Breakdown:")
+    if not report["category_breakdown"]:
+        print("     (no expenses this month)")
+    else:
+        for category, total in report["category_breakdown"].items():
+            print(f"     {category:<16} {total}")
+    print("=" * 50)
+
+    output_dir = os.path.join(config.ANALYTICS_OUTPUT_DIR, user_id)
+    paths = analytics_charts.save_all_charts(user_id, analytics, output_dir)
+    print("\n   Charts saved:")
+    for path in paths:
+        print(f"     {path}")
+    print()
 
 
 def list_ports():
@@ -396,6 +593,10 @@ Examples:
   python main.py --list-users     Show registered users
   python main.py --list-ports     Show serial ports
   python main.py --test           Run system self-test
+  python main.py --bank USR001    Open banking menu for a user
+  python main.py --train-fraud-model  Train/select the fraud model
+  python main.py --fraud-logs     Show recent fraud log entries
+  python main.py --analytics USR001  Show monthly report + save charts
         """
     )
 
@@ -413,6 +614,14 @@ Examples:
                         help="Run system self-test")
     parser.add_argument("--port", type=str,
                         help="Override serial port (e.g., COM4)")
+    parser.add_argument("--bank", type=str, metavar="USER_ID",
+                        help="Open the PIN-gated CLI banking menu for a user")
+    parser.add_argument("--train-fraud-model", action="store_true",
+                        help="Train Isolation Forest/LOF/XGBoost and keep the best by F1")
+    parser.add_argument("--fraud-logs", action="store_true",
+                        help="Show recent fraud log entries")
+    parser.add_argument("--analytics", type=str, metavar="USER_ID",
+                        help="Show a user's monthly finance report and save charts")
 
     args = parser.parse_args()
 
@@ -442,6 +651,14 @@ Examples:
         list_ports()
     elif args.test:
         run_self_test()
+    elif args.bank:
+        bank_menu(args.bank)
+    elif args.train_fraud_model:
+        train_fraud_model()
+    elif args.fraud_logs:
+        fraud_logs_report()
+    elif args.analytics:
+        show_analytics(args.analytics)
     else:
         # Launch ATM interface
         logger.system_event("Main", "Launching ATM Interface")

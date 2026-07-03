@@ -19,10 +19,12 @@ from fingerprint_module.serial_handler import SerialHandler
 class AuthStage(Enum):
     """Authentication pipeline stages."""
     IDLE = "idle"
+    CARD_INSERTED = "card_inserted"
     FACE_SCAN = "face_scan"
     LIVENESS_CHECK = "liveness_check"
     FINGERPRINT_SCAN = "fingerprint_scan"
     IDENTITY_FUSION = "identity_fusion"
+    CARD_VERIFICATION = "card_verification"
     PIN_ENTRY = "pin_entry"
     GRANTED = "access_granted"
     DENIED = "access_denied"
