@@ -17,8 +17,12 @@ export default function Login() {
     try {
       await login(userId, pin);
       navigate("/dashboard");
-    } catch {
-      setError("Invalid user ID or PIN.");
+    } catch (err) {
+      if (err.response?.status === 401) {
+        setError("Invalid user ID or PIN.");
+      } else {
+        setError("Cannot reach the server. Is the backend running on port 8000?");
+      }
     } finally {
       setLoading(false);
     }
@@ -27,8 +31,9 @@ export default function Login() {
   return (
     <div className="centered-page">
       <form className="card login-card" onSubmit={handleSubmit}>
-        <h1 className="login-title">🏦 SmartBank</h1>
-        <p className="login-subtitle">Online Banking Portal</p>
+        <div className="login-logo">🏦</div>
+        <h1 className="login-title">SmartBank</h1>
+        <p className="login-subtitle">Secure Online Banking Portal</p>
 
         <label className="field-label">User ID</label>
         <input
@@ -56,6 +61,10 @@ export default function Login() {
         <button className="btn btn-primary" type="submit" disabled={loading}>
           {loading ? "Signing in..." : "Sign In"}
         </button>
+
+        <p className="login-hint">
+          Use the User ID and PIN created during ATM enrollment.
+        </p>
       </form>
     </div>
   );

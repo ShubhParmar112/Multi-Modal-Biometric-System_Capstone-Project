@@ -8,6 +8,7 @@ export default function Dashboard() {
   const [account, setAccount] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
@@ -19,7 +20,9 @@ export default function Dashboard() {
         setAccount(accRes.data);
         setTransactions(txnRes.data);
       } catch {
-        setError("Could not load account data.");
+        setError("Could not load account data. Make sure the backend is running.");
+      } finally {
+        setLoading(false);
       }
     }
     load();
@@ -30,6 +33,7 @@ export default function Dashboard() {
       <h1>Welcome, {user?.name}</h1>
 
       {error && <p className="error-text">{error}</p>}
+      {loading && <div className="spinner" />}
 
       {account && (
         <div className="card balance-card">

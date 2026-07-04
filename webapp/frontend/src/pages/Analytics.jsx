@@ -16,19 +16,27 @@ export default function Analytics() {
   const [spendingTrend, setSpendingTrend] = useState([]);
   const [savingsTrend, setSavingsTrend] = useState([]);
   const [cashFlow, setCashFlow] = useState([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const [reportRes, spendRes, savingsRes, flowRes] = await Promise.all([
-        client.get("/api/analytics/monthly-report"),
-        client.get("/api/analytics/spending-trend?months=6"),
-        client.get("/api/analytics/savings-trend?months=6"),
-        client.get("/api/analytics/cash-flow?months=6"),
-      ]);
-      setReport(reportRes.data);
-      setSpendingTrend(spendRes.data);
-      setSavingsTrend(savingsRes.data);
-      setCashFlow(flowRes.data);
+      try {
+        const [reportRes, spendRes, savingsRes, flowRes] = await Promise.all([
+          client.get("/api/analytics/monthly-report"),
+          client.get("/api/analytics/spending-trend?months=6"),
+          client.get("/api/analytics/savings-trend?months=6"),
+          client.get("/api/analytics/cash-flow?months=6"),
+        ]);
+        setReport(reportRes.data);
+        setSpendingTrend(spendRes.data);
+        setSavingsTrend(savingsRes.data);
+        setCashFlow(flowRes.data);
+      } catch {
+        setError("Could not load analytics data. Make sure the backend is running.");
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -46,6 +54,9 @@ export default function Analytics() {
   return (
     <div className="page">
       <h1>Personal Finance Analytics</h1>
+
+      {error && <p className="error-text">{error}</p>}
+      {loading && <div className="spinner" />}
 
       {report && (
         <div className="card summary-card">

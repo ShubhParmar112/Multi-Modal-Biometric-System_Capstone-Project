@@ -14,6 +14,7 @@ from groq import Groq
 import config
 from database.db_manager import DatabaseManager
 from portfolio.service import PortfolioService
+from utils.logger import logger
 
 INCOME_TYPES  = {"deposit", "transfer_in"}
 EXPENSE_TYPES = {"withdraw", "transfer_out"}
@@ -23,7 +24,20 @@ ASSET_LABELS = {
     "fd": "Fixed Deposits", "cash": "Cash", "mutual_funds": "Mutual Funds",
 }
 
-_groq = Groq(api_key=config.GROQ_API_KEY)
+# Lazily constructed so a missing key breaks only the advisor endpoint,
+# not the import of every router that transitively pulls this module in.
+_groq = None
+
+
+def _get_client():
+    global _groq
+    if _groq is None and config.GROQ_API_KEY:
+        _groq = Groq(
+            api_key=config.GROQ_API_KEY,
+            timeout=config.GROQ_TIMEOUT,
+            max_retries=1,
+        )
+    return _groq
 
 
 # ── Context builder ───────────────────────────────────────────────────────────
@@ -121,19 +135,68 @@ def _build_context(user_id: str, db: DatabaseManager) -> str:
             lines.append(f"  Expected Risk   : {rec['expected_risk']}%")
             lines.append(f"  Sharpe Ratio    : {rec['sharpe_ratio']}")
 
+    snapshot = _market_snapshot()
+    if snapshot:
+        lines.append("")
+        lines.append(snapshot)
+
     return "\n".join(lines)
+
+
+def _market_snapshot() -> str:
+    """Live market context (served from the portfolio module's caches) so
+    the advisor can answer general market questions, not just personal ones."""
+    try:
+        from portfolio import market_data, specific_picks
+
+        lines = ["=== Live Market Snapshot ==="]
+        stats = market_data.get_asset_statistics()
+        market_labels = {"equity": "Equity (NIFTY 50)", "debt": "Debt",
+                         "gold": "Gold", "mutual_funds": "Mutual Funds"}
+        for key, label in market_labels.items():
+            ret = stats["returns"].get(key)
+            vol = stats["volatility"].get(key)
+            if ret is not None and vol is not None:
+                lines.append(f"  {label}: annualised return {ret * 100:.1f}%, "
+                             f"volatility {vol * 100:.1f}%")
+
+        equity = specific_picks.get_equity_picks("medium")
+        if equity:
+            lines.append("  Top NSE large-caps (live prices):")
+            for row in equity[:6]:
+                extra = ""
+                if row.get("returns_1y_pct") is not None:
+                    extra = f", 1Y return {row['returns_1y_pct']:+.1f}%"
+                lines.append(f"    - {row['name']}: ₹{row['price']:,} "
+                             f"({row['change_pct']:+.2f}% today{extra})")
+        return "\n".join(lines)
+    except Exception:
+        return ""
 
 
 # ── LLM call ─────────────────────────────────────────────────────────────────
 
 _SYSTEM = """\
 You are SmartBank's AI Financial Advisor — a helpful, concise expert on the \
-user's personal finances. You have access to their real account data below. \
-Answer questions accurately using that data. Format currency in Indian style \
-with the ₹ symbol (e.g. ₹1,23,456.78). Use **bold** for key numbers. \
-Keep replies under 200 words unless a detailed breakdown is genuinely needed. \
-Do not make up numbers that are not in the data. If information is unavailable, \
-say so clearly and suggest what the user can do.
+user's personal finances. You have access to their real account data below.
+
+STRICT SCOPE — read carefully:
+- You may ONLY discuss finance and money: the user's accounts, transactions, \
+spending, savings, budgeting, investments, markets, banking products, loans, \
+insurance, taxes, and general personal-finance concepts.
+- If the user asks about ANYTHING else (coding, homework, entertainment, \
+trivia, health, relationships, politics, etc.), do not answer it. Reply only: \
+"That's out of my range of abilities — I can only help with finance and \
+money-related questions." Do not add anything after that sentence.
+- For general finance or market questions, answer from the Live Market \
+Snapshot below plus your general financial knowledge, with a note that \
+markets change quickly.
+- Never invent numbers about the user's personal accounts — if a personal \
+figure is not in the data, say so and suggest what the user can do.
+
+STYLE: Format currency in Indian style with the ₹ symbol (e.g. ₹1,23,456.78). \
+Use **bold** for key numbers. Keep replies under 200 words unless a detailed \
+breakdown is genuinely needed.
 
 --- LIVE FINANCIAL DATA ---
 {context}
@@ -143,6 +206,11 @@ say so clearly and suggest what the user can do.
 
 def answer(user_id: str, question: str, history: list,
            db: DatabaseManager) -> str:
+    client = _get_client()
+    if client is None:
+        return ("The AI advisor isn't configured yet — add your GROQ_API_KEY "
+                "to the .env file in the project root and restart the server.")
+
     context  = _build_context(user_id, db)
     sys_msg  = _SYSTEM.format(context=context)
 
@@ -152,7 +220,7 @@ def answer(user_id: str, question: str, history: list,
     messages.append({"role": "user", "content": question})
 
     try:
-        resp = _groq.chat.completions.create(
+        resp = client.chat.completions.create(
             model=config.GROQ_MODEL,
             messages=messages,
             max_tokens=512,
@@ -160,4 +228,10 @@ def answer(user_id: str, question: str, history: list,
         )
         return resp.choices[0].message.content.strip()
     except Exception as e:
-        return f"Sorry, I couldn't reach the AI service right now. ({e})"
+        logger.error(f"Advisor LLM call failed: {e}")
+        detail = str(e)
+        if "decommissioned" in detail or "model_not_found" in detail:
+            return ("The configured AI model is no longer available on Groq. "
+                    "Set GROQ_MODEL in .env to a current model "
+                    "(e.g. llama-3.3-70b-versatile) and restart the server.")
+        return "Sorry, I couldn't reach the AI service right now. Please try again in a moment."

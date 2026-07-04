@@ -99,10 +99,13 @@ ANALYTICS_OUTPUT_DIR = os.path.join(BASE_DIR, "analytics", "output")
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-in-production")
 
 # ============================================================
-# AI ADVISOR (Groq — Llama 3 70B)
+# AI ADVISOR (Groq — Llama 3.3 70B)
 # ============================================================
+# NOTE: llama-3.1-70b-versatile was decommissioned by Groq; 3.3 is the
+# current versatile model. Override via the GROQ_MODEL env var if needed.
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL   = "llama-3.1-70b-versatile"
+GROQ_MODEL   = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_TIMEOUT = 30                     # Seconds before an advisor LLM call is abandoned
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60
 WEBAPP_CORS_ORIGINS = ["http://localhost:5173"]
@@ -122,6 +125,15 @@ PORTFOLIO_RISK_FREE_RATE = 0.04
 PORTFOLIO_VOLATILITY_CAPS = {"low": 0.06, "medium": 0.12, "high": 0.20}
 PORTFOLIO_HISTORY_PERIOD = "5y"
 PORTFOLIO_CACHE_HOURS = 24
+# Persisted market-data cache so restarts don't refetch 5y of history.
+PORTFOLIO_CACHE_FILE = os.path.join(BASE_DIR, "portfolio", "market_cache.json")
+# Hard deadlines on outbound market-data calls. Without these, a slow or
+# unreachable Yahoo Finance endpoint pins FastAPI worker threads forever
+# and eventually hangs every endpoint in the app. Fetches run in a
+# subprocess (see portfolio/yf_worker.py), so the deadline also covers
+# interpreter startup (~4-6 s on Windows).
+PORTFOLIO_FETCH_TIMEOUT = 45          # Seconds for the bulk 5y statistics download
+PORTFOLIO_PICKS_TIMEOUT = 30          # Seconds for the live ticker quote batch
 
 # ============================================================
 # UI SETTINGS

@@ -273,22 +273,24 @@ export default function Portfolio() {
               {recommendation.equity_pct > 0 && picks.equity.length > 0 && (
                 <div className="card">
                   <SectionHeader icon={SECTION_ICONS.equity}
-                    title="Equity — Top Nifty 50 Stocks (Live)"
+                    title={`Equity — Top NSE Picks for ${profile.risk_appetite.charAt(0).toUpperCase() + profile.risk_appetite.slice(1)} Risk (Live)`}
                     pct={recommendation.equity_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
-                    Prices refresh every hour. Consider diversifying across sectors.
+                    Selected dynamically from live NSE data for your risk profile — low risk favours
+                    stability, high risk favours momentum. Prices refresh every hour.
                   </p>
                   <div style={{ overflowX: "auto" }}>
-                    <table className="table" style={{ minWidth: 700 }}>
+                    <table className="table" style={{ minWidth: 760 }}>
                       <thead>
                         <tr>
                           <th>Company</th>
                           <th>Sector</th>
                           <th>Price (₹)</th>
                           <th>Day Change</th>
+                          <th>1Y Return</th>
+                          <th>Volatility</th>
                           <th>52W High</th>
                           <th>52W Low</th>
-                          <th>Market Cap</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -301,9 +303,12 @@ export default function Portfolio() {
                             <td><Badge text={s.sector} color="#4ECDC4" /></td>
                             <td style={{ fontWeight: 700 }}>₹{s.price?.toLocaleString("en-IN")}</td>
                             <td><ChangeChip value={s.change_pct} /></td>
+                            <td><ChangeChip value={s.returns_1y_pct} /></td>
+                            <td className="muted">
+                              {s.volatility_pct != null ? `${s.volatility_pct.toFixed(1)}%` : "—"}
+                            </td>
                             <td style={{ color: "var(--primary)" }}>₹{s.week52_high?.toLocaleString("en-IN")}</td>
                             <td style={{ color: "var(--accent)" }}>₹{s.week52_low?.toLocaleString("en-IN")}</td>
-                            <td className="muted">{s.market_cap}</td>
                           </tr>
                         ))}
                       </tbody>

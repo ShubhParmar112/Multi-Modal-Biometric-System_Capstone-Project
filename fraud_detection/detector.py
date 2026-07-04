@@ -19,6 +19,11 @@ from database.db_manager import DatabaseManager
 from fraud_detection.features import build_feature_vector
 
 
+# Process-wide model cache: FraudDetector is constructed per request in the
+# web app, and re-reading the joblib file from disk each time is wasteful.
+_model_cache = {"model": None, "meta": None, "mtime": None}
+
+
 class FraudDetector:
     """Scores transactions for fraud risk using the trained model on disk."""
 
@@ -38,10 +43,17 @@ class FraudDetector:
             )
             return
 
+        mtime = os.path.getmtime(config.FRAUD_MODEL_PATH)
+        if _model_cache["model"] is not None and _model_cache["mtime"] == mtime:
+            self.model = _model_cache["model"]
+            self.meta = _model_cache["meta"]
+            return
+
         try:
             self.model = joblib.load(config.FRAUD_MODEL_PATH)
             with open(config.FRAUD_MODEL_META_PATH, encoding="utf-8") as f:
                 self.meta = json.load(f)
+            _model_cache.update(model=self.model, meta=self.meta, mtime=mtime)
             logger.success(
                 f"Fraud model loaded: {self.meta['model_name']} "
                 f"(F1={self.meta.get('f1')})"

@@ -5,114 +5,204 @@ Mutual funds, Debt, and FD are curated static lists — yfinance has no
 INR mutual-fund NAV support.
 """
 
+import json
+import os
+import threading
 import time
-from typing import List, Optional
+from typing import List
 
-import numpy as np
-import yfinance as yf
-
+import config
+from portfolio import yf_worker
 from utils.logger import logger
 
-# ── Equity picks — top Nifty 50 / large-cap stocks ───────────────────────────
-
-EQUITY_TICKERS = {
+# ── Candidate universes ──────────────────────────────────────────────────────
+# These are only symbol lookup tables (Yahoo tickers + display labels) — no
+# market figures live here. Prices, day change, 1-year return, volatility and
+# the 52-week range are all fetched/computed live, and the picks actually
+# shown are SELECTED dynamically from that live data based on the user's risk
+# appetite (see _select_equity). A symbol that fails to fetch (delisted,
+# renamed, or one of the tickers that crashes the yfinance stack) is simply
+# skipped — its fetch runs in an isolated subprocess.
+EQUITY_UNIVERSE = {
     "RELIANCE.NS":   {"name": "Reliance Industries",        "sector": "Energy & Retail"},
     "TCS.NS":        {"name": "Tata Consultancy Services",  "sector": "IT"},
     "INFY.NS":       {"name": "Infosys",                    "sector": "IT"},
+    "HCLTECH.NS":    {"name": "HCL Technologies",           "sector": "IT"},
+    "WIPRO.NS":      {"name": "Wipro",                      "sector": "IT"},
     "HDFCBANK.NS":   {"name": "HDFC Bank",                  "sector": "Banking"},
     "ICICIBANK.NS":  {"name": "ICICI Bank",                 "sector": "Banking"},
+    "KOTAKBANK.NS":  {"name": "Kotak Mahindra Bank",        "sector": "Banking"},
+    "SBIN.NS":       {"name": "State Bank of India",        "sector": "Banking"},
+    "BAJFINANCE.NS": {"name": "Bajaj Finance",              "sector": "Financial Services"},
     "BHARTIARTL.NS": {"name": "Bharti Airtel",              "sector": "Telecom"},
     "HINDUNILVR.NS": {"name": "Hindustan Unilever",         "sector": "FMCG"},
-    "WIPRO.NS":      {"name": "Wipro",                      "sector": "IT"},
+    "ITC.NS":        {"name": "ITC",                        "sector": "FMCG"},
+    "NESTLEIND.NS":  {"name": "Nestlé India",               "sector": "FMCG"},
+    "LT.NS":         {"name": "Larsen & Toubro",            "sector": "Infrastructure"},
+    "MARUTI.NS":     {"name": "Maruti Suzuki",              "sector": "Auto"},
+    "TATAMOTORS.NS": {"name": "Tata Motors",                "sector": "Auto"},
+    "SUNPHARMA.NS":  {"name": "Sun Pharma",                 "sector": "Pharma"},
+    "TITAN.NS":      {"name": "Titan Company",              "sector": "Consumer"},
+    "ASIANPAINT.NS": {"name": "Asian Paints",               "sector": "Consumer"},
 }
 
-# ── Gold ETFs ────────────────────────────────────────────────────────────────
-
-GOLD_TICKERS = {
-    "GOLDBEES.NS": {"name": "Nippon India Gold ETF (GOLDBEES)", "sector": "Gold ETF"},
-    "SGOLD.NS":    {"name": "SBI Gold ETF (SGOLD)",             "sector": "Gold ETF"},
+GOLD_UNIVERSE = {
+    "GOLDBEES.NS":  {"name": "Nippon India Gold ETF (GOLDBEES)", "sector": "Gold ETF"},
+    "SETFGOLD.NS":  {"name": "SBI Gold ETF (SETFGOLD)",          "sector": "Gold ETF"},
+    "KOTAKGOLD.NS": {"name": "Kotak Gold ETF",                   "sector": "Gold ETF"},
+    "HDFCGOLD.NS":  {"name": "HDFC Gold ETF",                    "sector": "Gold ETF"},
+    "AXISGOLD.NS":  {"name": "Axis Gold ETF",                    "sector": "Gold ETF"},
 }
 
-_equity_cache: dict = {"data": None, "at": 0.0}
-_gold_cache:   dict = {"data": None, "at": 0.0}
+EQUITY_PICK_COUNT = 6
+
 CACHE_H = 1.0
+PICKS_CACHE_FILE = os.path.join(config.BASE_DIR, "portfolio", "picks_cache.json")
+
+_SGB_ROW = {
+    "ticker":      "SGB",
+    "name":        "Sovereign Gold Bond (SGB)",
+    "sector":      "Govt. Backed",
+    "price":       None,
+    "change_pct":  None,
+    "market_cap":  "GoI Backed",
+    "week52_high": None,
+    "week52_low":  None,
+    "note":        "2.5% p.a. interest + gold price appreciation. Capital gains tax-free on RBI maturity. Buy via banks, post offices, or NSE.",
+}
+
+# kind -> {"data": [...] | None, "at": epoch}. Persisted to disk so a server
+# restart doesn't refetch. Stale entries are served immediately while a
+# background thread refreshes them — a request never waits on Yahoo unless
+# there is no data at all (the very first run).
+_caches = {
+    "equity": {"data": None, "at": 0.0},
+    "gold":   {"data": None, "at": 0.0},
+}
+_TICKERS = {"equity": lambda: EQUITY_UNIVERSE, "gold": lambda: GOLD_UNIVERSE}
+_lock = threading.Lock()
+_refreshing: set = set()
+_disk_loaded = False
 
 
-def _stale(cache: dict) -> bool:
-    return cache["data"] is None or (time.time() - cache["at"]) / 3600 > CACHE_H
+# Bump when the row schema changes so stale disk caches are discarded.
+_CACHE_VERSION = 2
 
 
-def _safe_float(val, default=None):
-    """Return float or default; handles None and NaN."""
-    if val is None:
-        return default
+def _load_disk_cache_once():
+    global _disk_loaded
+    if _disk_loaded:
+        return
+    _disk_loaded = True
     try:
-        f = float(val)
-        return default if (f != f) else f  # NaN check
+        with open(PICKS_CACHE_FILE, encoding="utf-8") as f:
+            saved = json.load(f)
+        if saved.get("version") != _CACHE_VERSION:
+            return
+        for kind in _caches:
+            if saved.get(kind, {}).get("data"):
+                _caches[kind] = saved[kind]
+        logger.info("Investment picks restored from disk cache")
     except Exception:
-        return default
+        pass
 
 
-def _fmt_cap(rupees) -> str:
-    v = _safe_float(rupees, 0)
-    if v <= 0:
-        return "N/A"
-    cr = v / 1e7  # INR → crore
-    if cr >= 1_00_000:
-        return f"₹{cr / 1_00_000:.1f}L Cr"
-    if cr >= 1_000:
-        return f"₹{cr / 1_000:.0f}K Cr"
-    return f"₹{cr:.0f} Cr"
-
-
-def _fetch_ticker(ticker: str, meta: dict) -> Optional[dict]:
+def _save_disk_cache():
     try:
-        fi = yf.Ticker(ticker).fast_info
-        price = _safe_float(fi.last_price)
-        if price is None:
-            return None
-        prev = _safe_float(fi.previous_close, price)
-        change_pct = round((price - prev) / prev * 100, 2) if prev else 0.0
-        return {
-            "ticker":      ticker.replace(".NS", ""),
-            "name":        meta["name"],
-            "sector":      meta.get("sector", ""),
-            "price":       round(price, 2),
-            "change_pct":  change_pct,
-            "market_cap":  _fmt_cap(fi.market_cap),
-            "week52_high": round(_safe_float(fi.fifty_two_week_high, 0), 2),
-            "week52_low":  round(_safe_float(fi.fifty_two_week_low, 0), 2),
-        }
+        payload = {"version": _CACHE_VERSION, **_caches}
+        tmp = PICKS_CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, PICKS_CACHE_FILE)
     except Exception as e:
-        logger.warning(f"Skipping {ticker}: {e}")
-        return None
+        logger.warning(f"Could not persist picks cache: {e}")
 
 
-def get_equity_picks(force_refresh: bool = False) -> List[dict]:
-    if not force_refresh and not _stale(_equity_cache):
-        return _equity_cache["data"]
-    picks = [r for t, m in EQUITY_TICKERS.items() if (r := _fetch_ticker(t, m))]
-    _equity_cache.update({"data": picks, "at": time.time()})
-    return picks
+def _refresh(kind: str):
+    """Blocking fetch of one pick list; stores only non-empty results."""
+    try:
+        rows = yf_worker.fetch_quotes_isolated(
+            _TICKERS[kind](), config.PORTFOLIO_PICKS_TIMEOUT)
+        if kind == "gold":
+            rows = rows + [_SGB_ROW]
+            got_live = len(rows) > 1
+        else:
+            got_live = bool(rows)
+
+        with _lock:
+            if got_live or not _caches[kind]["data"]:
+                _caches[kind] = {"data": rows, "at": time.time()}
+                _save_disk_cache()
+            if got_live:
+                logger.success(f"Live {kind} picks refreshed ({len(rows)} rows)")
+            else:
+                logger.warning(f"Live {kind} picks fetch returned nothing")
+    finally:
+        with _lock:
+            _refreshing.discard(kind)
+
+
+def _get_picks(kind: str, force_refresh: bool) -> List[dict]:
+    _load_disk_cache_once()
+
+    with _lock:
+        cache = _caches[kind]
+        fresh = cache["data"] and (time.time() - cache["at"]) / 3600 < CACHE_H
+        if fresh and not force_refresh:
+            return cache["data"]
+
+        has_data = bool(cache["data"])
+        already_refreshing = kind in _refreshing
+        if not already_refreshing:
+            _refreshing.add(kind)
+
+    if has_data:
+        # Serve stale data now; refresh in the background (single-flight).
+        if not already_refreshing:
+            threading.Thread(target=_refresh, args=(kind,),
+                             daemon=True, name=f"picks-{kind}").start()
+        return _caches[kind]["data"]
+
+    # First-ever fetch: nothing to serve, so this one blocks.
+    if not already_refreshing:
+        _refresh(kind)
+    return _caches[kind]["data"] or []
+
+
+def _select_equity(rows: List[dict], risk_appetite: str) -> List[dict]:
+    """Pick the top stocks for the user's risk profile from live data:
+    low risk → most stable (lowest annualised volatility with a positive
+    1-year return where possible); high risk → strongest 1-year momentum;
+    medium → best return-per-unit-of-risk. Selection changes as the
+    market data changes."""
+    usable = [r for r in rows
+              if r.get("returns_1y_pct") is not None and r.get("volatility_pct")]
+    if not usable:
+        return rows[:EQUITY_PICK_COUNT]
+
+    risk = risk_appetite.lower()
+    if risk == "low":
+        # Stable stocks first, preferring those with a positive year —
+        # but always fill the list even in a bearish market.
+        ranked = sorted(usable,
+                        key=lambda r: (r["returns_1y_pct"] <= 0, r["volatility_pct"]))
+    elif risk == "high":
+        ranked = sorted(usable, key=lambda r: r["returns_1y_pct"], reverse=True)
+    else:
+        ranked = sorted(usable,
+                        key=lambda r: r["returns_1y_pct"] / r["volatility_pct"],
+                        reverse=True)
+    return ranked[:EQUITY_PICK_COUNT]
+
+
+def get_equity_picks(risk_appetite: str = "medium",
+                     force_refresh: bool = False) -> List[dict]:
+    universe = _get_picks("equity", force_refresh)
+    return _select_equity(universe, risk_appetite)
 
 
 def get_gold_picks(force_refresh: bool = False) -> List[dict]:
-    if not force_refresh and not _stale(_gold_cache):
-        return _gold_cache["data"]
-    picks = [r for t, m in GOLD_TICKERS.items() if (r := _fetch_ticker(t, m))]
-    picks.append({
-        "ticker":      "SGB",
-        "name":        "Sovereign Gold Bond (SGB)",
-        "sector":      "Govt. Backed",
-        "price":       None,
-        "change_pct":  None,
-        "market_cap":  "GoI Backed",
-        "week52_high": None,
-        "week52_low":  None,
-        "note":        "2.5% p.a. interest + gold price appreciation. Capital gains tax-free on RBI maturity. Buy via banks, post offices, or NSE.",
-    })
-    _gold_cache.update({"data": picks, "at": time.time()})
-    return picks
+    return _get_picks("gold", force_refresh)
 
 
 # ── Mutual funds — curated, risk-bucketed ─────────────────────────────────────
@@ -168,7 +258,7 @@ FD_PICKS = [
 
 def get_all_picks(risk_appetite: str = "medium") -> dict:
     return {
-        "equity":       get_equity_picks(),
+        "equity":       get_equity_picks(risk_appetite),
         "mutual_funds": get_mutual_fund_picks(risk_appetite),
         "gold":         get_gold_picks(),
         "debt":         DEBT_PICKS,

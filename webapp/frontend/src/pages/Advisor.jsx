@@ -104,7 +104,7 @@ export default function Advisor() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: "Hi! I'm your SmartBank AI Financial Advisor, powered by Llama 3.1. I have access to your real account data — ask me anything about your spending, savings, investments, or balance.",
+      text: "Hi! I'm your SmartBank AI Financial Advisor. I have access to your real account data — ask me anything about your spending, savings, investments, or balance.",
     },
   ]);
   // history sent to API: only role + content (no display-only "text" key)
@@ -174,7 +174,7 @@ export default function Advisor() {
         <div>
           <h1 style={{ margin: 0 }}>AI Financial Advisor</h1>
           <p className="muted" style={{ margin: "4px 0 0" }}>
-            Powered by Llama 3.1 70B · Answers use your real account data
+            Powered by Llama 3.3 70B via Groq · Answers use your real account data
           </p>
         </div>
         <button className="btn btn-secondary" style={{ marginTop: 6 }} onClick={clearChat}>

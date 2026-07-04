@@ -16,14 +16,18 @@ export default function Transactions() {
   const [transferCategory, setTransferCategory] = useState("Other");
 
   async function refresh() {
-    const [catRes, stmtRes, fraudRes] = await Promise.all([
-      client.get("/api/analytics/categories"),
-      client.get("/api/transactions/mini-statement?limit=20"),
-      client.get("/api/fraud/blocking-status"),
-    ]);
-    setCategories(catRes.data);
-    setStatement(stmtRes.data);
-    setBlockHighRisk(fraudRes.data.enabled);
+    try {
+      const [catRes, stmtRes, fraudRes] = await Promise.all([
+        client.get("/api/analytics/categories"),
+        client.get("/api/transactions/mini-statement?limit=20"),
+        client.get("/api/fraud/blocking-status"),
+      ]);
+      setCategories(catRes.data);
+      setStatement(stmtRes.data);
+      setBlockHighRisk(fraudRes.data.enabled);
+    } catch {
+      setStatus({ success: false, message: "Could not load data from the server." });
+    }
   }
 
   useEffect(() => {
@@ -38,35 +42,45 @@ export default function Transactions() {
     refresh();
   }
 
+  function showError() {
+    setStatus({ success: false, message: "The request failed. Please try again." });
+  }
+
   async function handleDeposit(e) {
     e.preventDefault();
-    const res = await client.post("/api/transactions/deposit", {
-      amount: parseFloat(depositAmount),
-    });
-    setDepositAmount("");
-    showStatus(res);
+    try {
+      const res = await client.post("/api/transactions/deposit", {
+        amount: parseFloat(depositAmount),
+      });
+      setDepositAmount("");
+      showStatus(res);
+    } catch { showError(); }
   }
 
   async function handleWithdraw(e) {
     e.preventDefault();
-    const res = await client.post("/api/transactions/withdraw", {
-      amount: parseFloat(withdrawAmount),
-      category: withdrawCategory,
-    });
-    setWithdrawAmount("");
-    showStatus(res);
+    try {
+      const res = await client.post("/api/transactions/withdraw", {
+        amount: parseFloat(withdrawAmount),
+        category: withdrawCategory,
+      });
+      setWithdrawAmount("");
+      showStatus(res);
+    } catch { showError(); }
   }
 
   async function handleTransfer(e) {
     e.preventDefault();
-    const res = await client.post("/api/transactions/transfer", {
-      to_account_number: transferAccount,
-      amount: parseFloat(transferAmount),
-      category: transferCategory,
-    });
-    setTransferAccount("");
-    setTransferAmount("");
-    showStatus(res);
+    try {
+      const res = await client.post("/api/transactions/transfer", {
+        to_account_number: transferAccount,
+        amount: parseFloat(transferAmount),
+        category: transferCategory,
+      });
+      setTransferAccount("");
+      setTransferAmount("");
+      showStatus(res);
+    } catch { showError(); }
   }
 
   async function handleAddCategory(e) {

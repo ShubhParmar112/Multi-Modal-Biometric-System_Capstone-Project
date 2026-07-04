@@ -11,12 +11,16 @@ is an acceptable approximation for demonstrating the optimization
 methodology, not a production-grade asset model.
 """
 
+import json
+import os
+import threading
 import time
 
 import numpy as np
 import yfinance as yf
 
 import config
+from portfolio import yf_worker
 from utils.logger import logger
 
 ASSET_ORDER = ["equity", "debt", "gold", "fd", "cash", "mutual_funds"]
@@ -33,6 +37,30 @@ STATIC_FALLBACK_CORRELATION = {
 }
 
 _cache = {"data": None, "fetched_at": 0.0}
+_cache_lock = threading.Lock()
+
+# Retry a failed live fetch after this long instead of on every request.
+_FAILURE_BACKOFF_SECONDS = 15 * 60
+
+
+def _load_disk_cache():
+    """Restore the last successful fetch from disk (survives server restarts)."""
+    try:
+        with open(config.PORTFOLIO_CACHE_FILE, encoding="utf-8") as f:
+            payload = json.load(f)
+        return payload["data"], float(payload["fetched_at"])
+    except Exception:
+        return None, 0.0
+
+
+def _save_disk_cache(data: dict, fetched_at: float):
+    try:
+        tmp = config.PORTFOLIO_CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"data": data, "fetched_at": fetched_at}, f)
+        os.replace(tmp, config.PORTFOLIO_CACHE_FILE)
+    except Exception as e:
+        logger.warning(f"Could not persist market data cache: {e}")
 
 
 def _build_full_matrix(market_corr: dict) -> dict:
@@ -99,20 +127,35 @@ def _static_fallback() -> dict:
 
 def get_asset_statistics(force_refresh: bool = False) -> dict:
     """Returns {"returns": {...}, "volatility": {...}, "correlation": {...}, "source": ...}."""
-    age_hours = (time.time() - _cache["fetched_at"]) / 3600
-    if not force_refresh and _cache["data"] and age_hours < config.PORTFOLIO_CACHE_HOURS:
-        return _cache["data"]
+    with _cache_lock:
+        if _cache["data"] is None:
+            data, fetched_at = _load_disk_cache()
+            if data:
+                _cache.update(data=data, fetched_at=fetched_at)
+                logger.info("Portfolio market data restored from disk cache")
 
-    try:
-        data = _fetch_live_statistics()
-        logger.success("Portfolio market data fetched live via yfinance")
-    except Exception as e:
-        logger.warning(f"yfinance fetch failed ({e}); using static fallback assumptions")
-        data = _static_fallback()
+        age_hours = (time.time() - _cache["fetched_at"]) / 3600
+        if not force_refresh and _cache["data"] and age_hours < config.PORTFOLIO_CACHE_HOURS:
+            return _cache["data"]
 
-    _cache["data"] = data
-    _cache["fetched_at"] = time.time()
-    return data
+        # Fetched in a subprocess: the yfinance/curl_cffi stack can segfault,
+        # and the subprocess boundary keeps that from killing the server
+        # (see portfolio/yf_worker.py). The timeout is a hard deadline.
+        data = yf_worker.run_job({"kind": "stats"}, config.PORTFOLIO_FETCH_TIMEOUT)
+        if data is not None:
+            logger.success("Portfolio market data fetched live via yfinance")
+            _cache.update(data=data, fetched_at=time.time())
+            _save_disk_cache(data, _cache["fetched_at"])
+            return data
+        else:
+            logger.warning("yfinance fetch failed or timed out; using cached/static fallback")
+            if _cache["data"] is None:
+                _cache["data"] = _static_fallback()
+            # Serve the stale/static data now and retry live after a backoff,
+            # instead of hammering a dead endpoint on every request.
+            _cache["fetched_at"] = (time.time() - config.PORTFOLIO_CACHE_HOURS * 3600
+                                    + _FAILURE_BACKOFF_SECONDS)
+            return _cache["data"]
 
 
 def get_covariance_matrix(stats: dict = None) -> np.ndarray:
