@@ -1,14 +1,8 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  function handleLogout() {
-    logout();
-    navigate("/login");
-  }
+  const { user } = useAuth();
 
   if (!user) return null;
 
@@ -24,7 +18,10 @@ export default function Navbar() {
       </div>
       <div className="navbar-user">
         <span>{user.name}</span>
-        <button className="btn btn-secondary" onClick={handleLogout}>Logout</button>
+        <NavLink to="/settings" className="navbar-link navbar-settings"
+                 title="Settings">
+          ⚙️ Settings
+        </NavLink>
       </div>
     </nav>
   );

@@ -7,6 +7,7 @@ import Transactions from "./pages/Transactions";
 import Analytics from "./pages/Analytics";
 import Portfolio from "./pages/Portfolio";
 import Advisor from "./pages/Advisor";
+import Settings from "./pages/Settings";
 
 export default function App() {
   return (
@@ -33,6 +34,10 @@ export default function App() {
         <Route
           path="/advisor"
           element={<ProtectedRoute><Advisor /></ProtectedRoute>}
+        />
+        <Route
+          path="/settings"
+          element={<ProtectedRoute><Settings /></ProtectedRoute>}
         />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

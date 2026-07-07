@@ -7,6 +7,7 @@ export default function Transactions() {
   const [statement, setStatement] = useState([]);
   const [status, setStatus] = useState(null);
   const [blockHighRisk, setBlockHighRisk] = useState(false);
+  const [beneficiaries, setBeneficiaries] = useState([]);
 
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -17,14 +18,16 @@ export default function Transactions() {
 
   async function refresh() {
     try {
-      const [catRes, stmtRes, fraudRes] = await Promise.all([
+      const [catRes, stmtRes, fraudRes, benRes] = await Promise.all([
         client.get("/api/analytics/categories"),
         client.get("/api/transactions/mini-statement?limit=20"),
         client.get("/api/fraud/blocking-status"),
+        client.get("/api/settings/beneficiaries"),
       ]);
       setCategories(catRes.data);
       setStatement(stmtRes.data);
       setBlockHighRisk(fraudRes.data.enabled);
+      setBeneficiaries(benRes.data);
     } catch {
       setStatus({ success: false, message: "Could not load data from the server." });
     }
@@ -138,6 +141,22 @@ export default function Transactions() {
 
         <form className="card" onSubmit={handleTransfer}>
           <h2>🔁 Transfer</h2>
+          {beneficiaries.length > 0 && (
+            <>
+              <label className="field-label">Beneficiary</label>
+              <select
+                className="input" value=""
+                onChange={(e) => e.target.value && setTransferAccount(e.target.value)}
+              >
+                <option value="">Pick a saved beneficiary…</option>
+                {beneficiaries.map((b) => (
+                  <option key={b.beneficiary_id} value={b.account_number}>
+                    {b.name} — {b.account_number}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           <label className="field-label">Destination Account Number</label>
           <input
             className="input" required

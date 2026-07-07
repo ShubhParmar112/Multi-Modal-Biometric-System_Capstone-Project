@@ -69,6 +69,14 @@ def enroll_user():
         logger.error("Name cannot be empty")
         return
 
+    # Email address for transaction alerts (debit/credit mails)
+    import re
+    email = input("  Email (for transaction alerts): ").strip()
+    while email and not re.match(r"^[\w.+-]+@[\w-]+\.[\w.-]+$", email):
+        logger.warning("That doesn't look like a valid email address")
+        email = input("  Email (leave blank to skip): ").strip()
+    email = email or None
+
     pin = input("  4-digit PIN: ").strip()
     if len(pin) != config.PIN_LENGTH or not pin.isdigit():
         logger.error(f"PIN must be exactly {config.PIN_LENGTH} digits")
@@ -206,7 +214,8 @@ def enroll_user():
         name=name,
         fingerprint_id=fingerprint_id,
         pin=pin,
-        face_encoding=avg_encoding
+        face_encoding=avg_encoding,
+        email=email
     )
 
     if success:
@@ -220,6 +229,7 @@ def enroll_user():
         print("=" * 50)
         print(f"   User ID      : {user_id}")
         print(f"   Name          : {name}")
+        print(f"   Email         : {email or '(not set)'}")
         print(f"   Fingerprint   : ID {fingerprint_id}")
         print(f"   Face Images   : {user_dir}")
         print(f"   PIN           : {'*' * config.PIN_LENGTH}")

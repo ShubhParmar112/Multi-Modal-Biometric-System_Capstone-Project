@@ -33,6 +33,10 @@ CAMERA_INDEX = 0                     # Webcam index (0 = default)
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 FACE_FRAME_SKIP = 2                  # Process every Nth frame for performance
+# Detector input resolution. 640x640 is overkill for a user sitting at an
+# ATM — 320x320 runs ~4x faster on CPU with no practical accuracy loss at
+# webcam distance. Must be a multiple of 32.
+FACE_DET_SIZE = 320
 
 # ============================================================
 # LIVENESS DETECTION SETTINGS
@@ -91,6 +95,20 @@ FRAUD_BLOCK_HIGH_RISK = False           # default toggle state — logging only 
 # ANALYTICS SETTINGS
 # ============================================================
 ANALYTICS_OUTPUT_DIR = os.path.join(BASE_DIR, "analytics", "output")
+
+# ============================================================
+# EMAIL NOTIFICATIONS (transaction alerts)
+# ============================================================
+# Real mail needs SMTP credentials — set these in .env:
+#   SMTP_USER=you@gmail.com
+#   SMTP_PASSWORD=<16-char Gmail App Password>   (myaccount.google.com/apppasswords)
+# When credentials are missing, emails are skipped and logged instead.
+EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "true").lower() == "true"
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+EMAIL_FROM_NAME = "SmartBank Alerts"
 
 # ============================================================
 # WEB APP SETTINGS

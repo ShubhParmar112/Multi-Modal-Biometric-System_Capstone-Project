@@ -9,6 +9,24 @@ class LoginRequest(BaseModel):
     pin: str
 
 
+class FaceLoginRequest(BaseModel):
+    image: str  # data-URL or bare base64 JPEG/PNG captured from the webcam
+
+
+class ChangePinRequest(BaseModel):
+    old_pin: str
+    new_pin: str
+
+
+class UpdateEmailRequest(BaseModel):
+    email: str
+
+
+class BeneficiaryRequest(BaseModel):
+    name: str
+    account_number: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

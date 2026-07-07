@@ -37,7 +37,24 @@
       "Bash(npm run *)",
       "Bash(node node_modules/vite/bin/vite.js build)",
       "Bash(./venv/Scripts/python.exe -m py_compile portfolio/specific_picks.py portfolio/yf_worker.py advisor/nlp_engine.py)",
-      "PowerShell(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -Confirm:$false }; \"stopped\")"
+      "PowerShell(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -Confirm:$false }; \"stopped\")",
+      "Bash(./venv/Scripts/python.exe -c \"import requests; print\\('requests', requests.__version__\\)\")",
+      "Bash(curl -s -o /dev/null -w \"mfapi latest: %{http_code}\\\\n\" --max-time 15 \"https://api.mfapi.in/mf/119598/latest\")",
+      "Bash(curl -s --max-time 20 \"https://api.mfapi.in/mf/119598/latest\")",
+      "Bash(./venv/Scripts/python.exe -m portfolio.yf_worker)",
+      "Bash(curl -s -o /dev/null -w \"bankbazaar: %{http_code}\\\\n\" --max-time 15 -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\)\" \"https://www.bankbazaar.com/fixed-deposit-rate.html\")",
+      "Bash(curl -s -o /dev/null -w \"rbi: %{http_code}\\\\n\" --max-time 15 \"https://website.rbi.org.in/web/rbi/policy-repo-rate\")",
+      "Bash(curl -s --max-time 20 -A 'Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/126.0 Safari/537.36' https://www.bankbazaar.com/fixed-deposit-rate.html -o __TRACKED_VAR__/fd.html)",
+      "Bash(grep -io 'HDFC Bank\\\\|State Bank of India\\\\|IDFC\\\\|Kotak' __TRACKED_VAR__/fd.html)",
+      "Bash(grep -oE '[0-9]\\\\.[0-9]{2}%' __TRACKED_VAR__/fd.html)",
+      "Bash(mkdir -p '/c/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/55a8c9db-6542-40e8-9113-c4ecb401adeb/scratchpad')",
+      "Bash(curl -sL --max-time 25 -A 'Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/126.0 Safari/537.36' https://www.bankbazaar.com/fixed-deposit-rate.html -o '/c/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/55a8c9db-6542-40e8-9113-c4ecb401adeb/scratchpad/fd.html')",
+      "Read(//c/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/55a8c9db-6542-40e8-9113-c4ecb401adeb/scratchpad/**)",
+      "Bash(./venv/Scripts/python.exe -c \"import insightface, onnxruntime; print\\('insightface ok'\\)\")",
+      "Bash(./venv/Scripts/python.exe -)",
+      "Bash(./venv/Scripts/python.exe -c \"import sys; sys.path.insert\\(0,'.'\\); from webapp.backend.auth import create_access_token; print\\(create_access_token\\('USR001'\\)\\)\")",
+      "Bash(./venv/Scripts/python.exe -c \"import sys; sys.path.insert\\(0,'.'\\); from database.db_manager import DatabaseManager; print\\(DatabaseManager\\(\\).get_accounts_by_user\\('USR002'\\)[0]['account_number']\\)\")",
+      "Bash(./venv/Scripts/python.exe -m py_compile ui/atm_interface.py face_recognition_module/face_recognizer.py banking/account_manager.py database/db_manager.py utils/email_service.py webapp/backend/auth.py webapp/backend/routers/settings.py portfolio/specific_picks.py main.py config.py)"
     ]
   }
 }

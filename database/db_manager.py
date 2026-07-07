@@ -161,6 +161,18 @@ class DatabaseManager:
                 )
             """)
 
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS beneficiaries (
+                    beneficiary_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id         TEXT NOT NULL,
+                    name            TEXT NOT NULL,
+                    account_number  TEXT NOT NULL,
+                    added_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (user_id, account_number),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+
             # Migration: add `category` to transactions if it doesn't exist yet
             # (CREATE TABLE IF NOT EXISTS won't retroactively add columns).
             existing_cols = {row[1] for row in
@@ -169,6 +181,12 @@ class DatabaseManager:
                 conn.execute(
                     "ALTER TABLE transactions ADD COLUMN category TEXT DEFAULT 'Other'"
                 )
+
+            # Migration: add `email` to users for transaction notifications.
+            user_cols = {row[1] for row in
+                         conn.execute("PRAGMA table_info(users)").fetchall()}
+            if "email" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
 
             # Seed default categories once.
             count = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
@@ -196,7 +214,7 @@ class DatabaseManager:
         return hashlib.sha256(pin.encode()).hexdigest()
 
     def add_user(self, user_id: str, name: str, fingerprint_id: int,
-                 pin: str, face_encoding=None) -> bool:
+                 pin: str, face_encoding=None, email: str = None) -> bool:
         """
         Add a new user to the database.
 
@@ -206,6 +224,7 @@ class DatabaseManager:
             fingerprint_id: ID stored in the R307S sensor (1-127)
             pin: 4-digit PIN (will be hashed before storage)
             face_encoding: numpy array of face encoding (128-dim)
+            email: Address for transaction notifications (optional)
 
         Returns:
             True if user was added successfully, False otherwise
@@ -218,9 +237,9 @@ class DatabaseManager:
 
             conn.execute(
                 """INSERT INTO users (user_id, name, face_encoding,
-                   fingerprint_id, pin_hash) VALUES (?, ?, ?, ?, ?)""",
+                   fingerprint_id, pin_hash, email) VALUES (?, ?, ?, ?, ?, ?)""",
                 (user_id, name, encoding_blob, fingerprint_id,
-                 self._hash_pin(pin))
+                 self._hash_pin(pin), email)
             )
             conn.commit()
             logger.success(f"User added: {user_id} ({name})")
@@ -312,6 +331,40 @@ class DatabaseManager:
             return True
         except Exception as e:
             logger.error(f"Failed to update face encoding: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def update_user_email(self, user_id: str, email: str) -> bool:
+        """Update the notification email address for a user."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                "UPDATE users SET email = ? WHERE user_id = ?",
+                (email, user_id)
+            )
+            conn.commit()
+            logger.info(f"Email updated for user: {user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update email: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def update_pin(self, user_id: str, new_pin: str) -> bool:
+        """Replace a user's PIN hash."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                "UPDATE users SET pin_hash = ? WHERE user_id = ?",
+                (self._hash_pin(new_pin), user_id)
+            )
+            conn.commit()
+            logger.info(f"PIN changed for user: {user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update PIN: {e}")
             return False
         finally:
             conn.close()
@@ -593,6 +646,59 @@ class DatabaseManager:
             return True
         except Exception as e:
             logger.error(f"Failed to add category: {e}")
+            return False
+        finally:
+            conn.close()
+
+    # ── Beneficiaries ─────────────────────────────────────────
+
+    def add_beneficiary(self, user_id: str, name: str,
+                        account_number: str) -> bool:
+        """Save a beneficiary (transfer recipient) for a user."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO beneficiaries (user_id, name, account_number)
+                   VALUES (?, ?, ?)""",
+                (user_id, name, account_number)
+            )
+            conn.commit()
+            logger.success(f"Beneficiary added for {user_id}: {name}")
+            return True
+        except sqlite3.IntegrityError:
+            logger.warning(f"Beneficiary already exists for {user_id}: {account_number}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to add beneficiary: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_beneficiaries(self, user_id: str) -> List[Dict[str, Any]]:
+        """Retrieve all beneficiaries saved by a user."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM beneficiaries WHERE user_id = ?
+                   ORDER BY added_at DESC""",
+                (user_id,)
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def delete_beneficiary(self, user_id: str, beneficiary_id: int) -> bool:
+        """Remove a beneficiary (scoped to the owning user)."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "DELETE FROM beneficiaries WHERE beneficiary_id = ? AND user_id = ?",
+                (beneficiary_id, user_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Failed to delete beneficiary: {e}")
             return False
         finally:
             conn.close()

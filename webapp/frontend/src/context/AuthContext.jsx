@@ -9,12 +9,27 @@ export function AuthProvider({ children }) {
     return stored ? JSON.parse(stored) : null;
   });
 
-  async function login(userId, pin) {
-    const res = await client.post("/api/auth/login", { user_id: userId, pin });
-    const { access_token, user_id, name } = res.data;
+  function storeSession(data) {
+    const { access_token, user_id, name } = data;
     localStorage.setItem("smartbank_token", access_token);
     localStorage.setItem("smartbank_user", JSON.stringify({ user_id, name }));
     setUser({ user_id, name });
+  }
+
+  async function login(userId, pin) {
+    const res = await client.post("/api/auth/login", { user_id: userId, pin });
+    storeSession(res.data);
+  }
+
+  async function loginWithFace(imageDataUrl) {
+    // Face matching runs a CPU model server-side — allow it extra time.
+    const res = await client.post(
+      "/api/auth/face-login",
+      { image: imageDataUrl },
+      { timeout: 45000 }
+    );
+    storeSession(res.data);
+    return res.data;
   }
 
   function logout() {
@@ -24,7 +39,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, loginWithFace, logout }}>
       {children}
     </AuthContext.Provider>
   );

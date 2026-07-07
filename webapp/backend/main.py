@@ -25,7 +25,9 @@ from fastapi.responses import JSONResponse
 import config
 from utils.logger import logger
 from webapp.backend import auth
-from webapp.backend.routers import accounts, transactions, analytics, fraud, portfolio, advisor
+from webapp.backend.routers import (
+    accounts, transactions, analytics, fraud, portfolio, advisor, settings
+)
 
 app = FastAPI(title="SmartBank API")
 
@@ -40,10 +42,21 @@ def warm_market_caches():
             market_data.get_asset_statistics()
             specific_picks.get_equity_picks()
             specific_picks.get_gold_picks()
+            specific_picks.get_mutual_fund_picks()
+            specific_picks.get_debt_picks()
+            specific_picks.get_fd_picks()
         except Exception as e:
             logger.warning(f"Market cache warm-up failed (will retry on demand): {e}")
 
     threading.Thread(target=_warm, daemon=True, name="cache-warmup").start()
+
+
+@app.on_event("startup")
+def warm_face_models():
+    """Load the InsightFace models in the background so the first
+    Face ID login doesn't wait several seconds for model init."""
+    threading.Thread(target=auth.warm_face_recognizer,
+                     daemon=True, name="face-warmup").start()
 
 
 @app.exception_handler(Exception)
@@ -69,6 +82,7 @@ app.include_router(analytics.router)
 app.include_router(fraud.router)
 app.include_router(portfolio.router)
 app.include_router(advisor.router)
+app.include_router(settings.router)
 
 
 @app.get("/api/health")

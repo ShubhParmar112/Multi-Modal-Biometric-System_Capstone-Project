@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 import config
 from database.db_manager import DatabaseManager
 from fraud_detection.detector import FraudDetector
+from utils import email_service
 from utils.logger import logger
 
 
@@ -29,6 +30,20 @@ class BankingService:
     def _primary_account(self, user_id: str) -> Optional[dict]:
         accounts = self.db.get_accounts_by_user(user_id)
         return accounts[0] if accounts else None
+
+    def _notify(self, user_id: str, txn_type: str, direction: str,
+                amount: float, balance: float, account: dict,
+                category: str = "Other", counterparty: str = None):
+        """Email the account holder about a completed transaction.
+        Never raises — the transaction already succeeded."""
+        try:
+            user = self.db.get_user(user_id)
+            email_service.send_transaction_email(
+                user, txn_type, direction, amount, balance,
+                account["account_number"], category, counterparty
+            )
+        except Exception as e:
+            logger.error(f"Transaction alert failed for {user_id}: {e}")
 
     def _score_transaction(self, account_id: str, txn_type: str,
                            amount: float, channel: str = "atm"):
@@ -76,6 +91,8 @@ class BankingService:
             category="Income"
         )
         self.db.log_fraud(txn_id, risk_score, risk_category, model_used)
+        self._notify(user_id, "deposit", "credit", amount, new_balance,
+                     account, category="Income")
         logger.success(f"Deposit of {amount} for {user_id}: new balance {new_balance}")
         return True, f"Deposit successful. [Risk: {risk_category}]", new_balance
 
@@ -105,6 +122,8 @@ class BankingService:
             category=category
         )
         self.db.log_fraud(txn_id, risk_score, risk_category, model_used)
+        self._notify(user_id, "withdraw", "debit", amount, new_balance,
+                     account, category=category)
         logger.success(f"Withdrawal of {amount} for {user_id}: new balance {new_balance}")
         return True, f"Withdrawal successful. [Risk: {risk_category}]", new_balance
 
@@ -154,6 +173,14 @@ class BankingService:
             destination["account_id"], "transfer_in", amount
         )
         self.db.log_fraud(in_txn_id, in_risk_score, in_risk_category, in_model_used)
+
+        # Alert both sides: debit mail to the sender, credit mail to the receiver.
+        self._notify(user_id, "transfer_out", "debit", amount,
+                     source_new_balance, source, category=category,
+                     counterparty=to_account_number)
+        self._notify(destination["user_id"], "transfer_in", "credit", amount,
+                     dest_new_balance, destination, category="Income",
+                     counterparty=source["account_number"])
 
         logger.success(
             f"Transfer of {amount} from {user_id} to {to_account_number} complete"

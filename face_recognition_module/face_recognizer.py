@@ -26,15 +26,20 @@ class FaceRecognizer:
         self.is_loaded = False
         self.frame_count = 0
         self._app = None
+        # Last recognition result, reused to annotate skipped frames so the
+        # bounding box doesn't flicker between processed frames.
+        self._last_result: Tuple[Optional[str], float,
+                                 Optional[Tuple[int, int, int, int]]] = (None, 0.0, None)
 
     def _get_app(self):
         if self._app is None:
             from insightface.app import FaceAnalysis
+            det = getattr(config, "FACE_DET_SIZE", 320)
             self._app = FaceAnalysis(
                 name='buffalo_l',
                 providers=['CPUExecutionProvider']
             )
-            self._app.prepare(ctx_id=0, det_size=(640, 640))
+            self._app.prepare(ctx_id=0, det_size=(det, det))
         return self._app
 
     def load_encodings(self) -> bool:
@@ -100,12 +105,14 @@ class FaceRecognizer:
         faces = app.get(rgb)
 
         if not faces:
+            self._last_result = (None, 0.0, None)
             return None, 0.0, None
 
         # Filter by detection confidence
         faces = [f for f in faces
                  if f.det_score >= config.MIN_FACE_CONFIDENCE]
         if not faces:
+            self._last_result = (None, 0.0, None)
             return None, 0.0, None
 
         # Use the largest face if multiple detected
@@ -120,6 +127,7 @@ class FaceRecognizer:
         face_loc = (y1, x2, y2, x1)
 
         if len(self.known_encodings) == 0:
+            self._last_result = (None, 0.0, face_loc)
             return None, 0.0, face_loc
 
         distances = self._cosine_distances(self.known_encodings, probe)
@@ -146,13 +154,16 @@ class FaceRecognizer:
                 )
 
                 if final_confidence < config.MIN_FACE_CONFIDENCE:
-                    return None, final_confidence, face_loc
-
-                return voted_id, final_confidence, face_loc
-
-            return user_id, confidence, face_loc
+                    result = (None, final_confidence, face_loc)
+                else:
+                    result = (voted_id, final_confidence, face_loc)
+            else:
+                result = (user_id, confidence, face_loc)
         else:
-            return None, confidence, face_loc
+            result = (None, confidence, face_loc)
+
+        self._last_result = result
+        return result
 
     def recognize_with_timeout(self, timeout: int = 10,
                                required_confirmations: int = 5) -> Tuple[
@@ -253,11 +264,29 @@ class FaceRecognizer:
 
         return recognized_user, float(avg_confidence)
 
+    def annotate_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Draw the most recent recognition result onto a frame without
+        running any inference — cheap enough for the UI thread at 30 FPS."""
+        user_id, confidence, face_loc = self._last_result
+        if not face_loc:
+            return frame
+        top, right, bottom, left = face_loc
+        color = (0, 212, 170) if user_id else (0, 0, 233)
+        label = (f"{user_id} ({confidence:.1%})" if user_id
+                 else f"Unknown ({confidence:.1%})")
+        cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
+        cv2.putText(frame, label, (left + 2, top - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        return frame
+
     def get_frame_with_recognition(self, frame: np.ndarray) -> Tuple[
             np.ndarray, Optional[str], float]:
         """
         Process a frame and return the annotated frame along with
         recognition results. Used by the UI for live camera feed.
+
+        Skipped frames reuse the last recognition result for the overlay,
+        so the video stays smooth while inference runs every Nth frame.
 
         Returns:
             Tuple of (annotated_frame, user_id or None, confidence)
@@ -266,7 +295,7 @@ class FaceRecognizer:
         display = frame.copy()
 
         if self.frame_count % config.FACE_FRAME_SKIP != 0:
-            return display, None, 0.0
+            return self.annotate_frame(display), None, 0.0
 
         user_id, confidence, face_loc = self.recognize_from_frame(frame)
 

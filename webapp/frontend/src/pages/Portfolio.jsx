@@ -60,10 +60,6 @@ function Badge({ text, color }) {
   );
 }
 
-function RatingStars({ r }) {
-  return <span style={{ color: "var(--warning)", fontSize: 13 }}>{r}</span>;
-}
-
 function RiskBadge({ risk }) {
   const color =
     risk?.toLowerCase().includes("very high") ? "#E94560" :
@@ -324,7 +320,7 @@ export default function Portfolio() {
                     title={`Mutual Funds — ${profile.risk_appetite.charAt(0).toUpperCase() + profile.risk_appetite.slice(1)}-Risk Picks`}
                     pct={recommendation.mutual_funds_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
-                    Start a SIP to invest monthly. Returns are trailing figures — past performance is not a guarantee.
+                    Live NAVs and trailing returns from AMFI data — past performance is not a guarantee.
                   </p>
                   <div style={{ overflowX: "auto" }}>
                     <table className="table" style={{ minWidth: 750 }}>
@@ -332,25 +328,30 @@ export default function Portfolio() {
                         <tr>
                           <th>Fund Name</th>
                           <th>Category</th>
-                          <th>Rating</th>
                           <th>Risk</th>
+                          <th>NAV</th>
                           <th>1Y Returns</th>
-                          <th>3Y Returns</th>
-                          <th>Min SIP</th>
-                          <th>AUM</th>
+                          <th>3Y Returns (CAGR)</th>
+                          <th>Volatility</th>
                         </tr>
                       </thead>
                       <tbody>
                         {picks.mutual_funds.map(f => (
                           <tr key={f.name}>
-                            <td><strong style={{ color: "var(--text)" }}>{f.name}</strong></td>
+                            <td>
+                              <strong style={{ color: "var(--text)" }}>{f.name}</strong>
+                              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                {f.fund_house} · NAV as of {f.nav_date}
+                              </div>
+                            </td>
                             <td><Badge text={f.category} color="#9B59B6" /></td>
-                            <td><RatingStars r={f.rating} /></td>
                             <td><RiskBadge risk={f.risk} /></td>
-                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{f.returns_1y}%</td>
-                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{f.returns_3y}%</td>
-                            <td>₹{f.min_sip.toLocaleString("en-IN")}</td>
-                            <td className="muted">{f.aum}</td>
+                            <td style={{ fontWeight: 700 }}>₹{f.nav?.toLocaleString("en-IN")}</td>
+                            <td><ChangeChip value={f.returns_1y} /></td>
+                            <td><ChangeChip value={f.returns_3y} /></td>
+                            <td className="muted">
+                              {f.volatility_pct != null ? `${f.volatility_pct.toFixed(1)}%` : "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -411,29 +412,37 @@ export default function Portfolio() {
               {recommendation.debt_pct > 0 && (
                 <div className="card">
                   <SectionHeader icon={SECTION_ICONS.debt}
-                    title="Debt — Fixed Income Instruments"
+                    title="Debt — Exchange-Traded Fixed Income (Live)"
                     pct={recommendation.debt_pct} />
+                  <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
+                    Gilt, PSU bond and liquid ETFs traded on the NSE — live prices and 1-year returns.
+                  </p>
                   <div style={{ overflowX: "auto" }}>
                     <table className="table" style={{ minWidth: 640 }}>
                       <thead>
                         <tr>
                           <th>Type</th>
                           <th>Instrument</th>
-                          <th>Rate</th>
-                          <th>Tenure</th>
-                          <th>Risk</th>
-                          <th>Min. Investment</th>
+                          <th>Price (₹)</th>
+                          <th>Day Change</th>
+                          <th>1Y Return</th>
+                          <th>Volatility</th>
                         </tr>
                       </thead>
                       <tbody>
                         {picks.debt.map(d => (
-                          <tr key={d.name}>
+                          <tr key={d.ticker || d.name}>
                             <td><Badge text={d.type} color="#4ECDC4" /></td>
-                            <td><strong style={{ color: "var(--text)" }}>{d.name}</strong></td>
-                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{d.rate}</td>
-                            <td className="muted">{d.tenure}</td>
-                            <td><RiskBadge risk={d.risk} /></td>
-                            <td className="muted">{d.min_invest}</td>
+                            <td>
+                              <strong style={{ color: "var(--text)" }}>{d.name}</strong>
+                              <div style={{ fontSize: 11, color: "var(--muted)" }}>{d.ticker}</div>
+                            </td>
+                            <td style={{ fontWeight: 700 }}>₹{d.price?.toLocaleString("en-IN")}</td>
+                            <td><ChangeChip value={d.change_pct} /></td>
+                            <td><ChangeChip value={d.returns_1y_pct} /></td>
+                            <td className="muted">
+                              {d.volatility_pct != null ? `${d.volatility_pct.toFixed(1)}%` : "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -446,30 +455,26 @@ export default function Portfolio() {
               {recommendation.fd_pct > 0 && (
                 <div className="card">
                   <SectionHeader icon={SECTION_ICONS.fd}
-                    title="Fixed Deposits — Best Bank Rates"
+                    title="Fixed Deposits — Best Bank Rates (Live)"
                     pct={recommendation.fd_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
-                    Rates are indicative. Verify with bank before investing. DICGC insured up to ₹5L per bank.
+                    Live rate ranges across tenures, best offers first. Verify with the bank before investing. DICGC insured up to ₹5L per bank.
                   </p>
                   <div style={{ overflowX: "auto" }}>
                     <table className="table" style={{ minWidth: 560 }}>
                       <thead>
                         <tr>
                           <th>Bank</th>
-                          <th>1-Year Rate</th>
-                          <th>3-Year Rate</th>
-                          <th>5-Year Rate</th>
-                          <th>Special</th>
+                          <th>Regular Rate (all tenures)</th>
+                          <th>Senior Citizen Rate</th>
                         </tr>
                       </thead>
                       <tbody>
                         {picks.fd.map(fd => (
                           <tr key={fd.bank}>
                             <td><strong style={{ color: "var(--text)" }}>{fd.bank}</strong></td>
-                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{fd.rate_1y}%</td>
-                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{fd.rate_3y}%</td>
-                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{fd.rate_5y}%</td>
-                            <td className="muted">{fd.special || "—"}</td>
+                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{fd.rate_regular}</td>
+                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{fd.rate_senior}</td>
                           </tr>
                         ))}
                       </tbody>

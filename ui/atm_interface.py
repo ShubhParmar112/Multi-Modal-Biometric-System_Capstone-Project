@@ -403,26 +403,27 @@ class ATMInterface:
         self._update_camera()
 
     def _update_camera(self):
-        """Refresh the camera feed in the UI."""
+        """Refresh the camera feed in the UI.
+
+        This runs on the Tk main thread, so it must never do model
+        inference — recognition happens in the auth pipeline thread and
+        this loop only draws the cached overlay (a rectangle + label).
+        """
         if not self.is_running or self.cap is None:
             return
 
         ret, frame = self.cap.read()
         if ret:
-            # If auth is active and we're in face scan stage, run recognition
+            # During face scan, overlay the latest recognition result
+            # computed by the background auth thread.
             if self.auth_active and self.current_stage == AuthStage.FACE_SCAN:
-                frame, user_id, confidence = \
-                    self.face_recognizer.get_frame_with_recognition(frame)
-                if user_id:
-                    self.confidence_bar.set(confidence)
-                    self.confidence_label.configure(
-                        text=f"{confidence:.0%}"
-                    )
+                frame = self.face_recognizer.annotate_frame(frame)
 
-            # Convert to display format
+            # Convert to display format (cv2.resize is ~10x faster than
+            # PIL LANCZOS and indistinguishable for a live feed).
+            frame = cv2.resize(frame, (580, 420), interpolation=cv2.INTER_LINEAR)
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(frame_rgb)
-            img = img.resize((580, 420), Image.LANCZOS)
             imgtk = ctk.CTkImage(light_image=img, dark_image=img, size=(580, 420))
 
             self.camera_label.configure(image=imgtk, text="")
@@ -514,14 +515,20 @@ class ATMInterface:
                 if self.cap and self.cap.isOpened():
                     ret, frame = self.cap.read()
                     if ret:
+                        # Inference runs here, on the background thread —
+                        # the camera loop just draws this result.
                         uid, conf, loc = self.face_recognizer.recognize_from_frame(frame)
                         if uid:
+                            self.root.after(0, lambda c=conf: (
+                                self.confidence_bar.set(c),
+                                self.confidence_label.configure(text=f"{c:.0%}")
+                            ))
                             confirmations.setdefault(uid, []).append(conf)
                             if len(confirmations[uid]) >= required_confirmations:
                                 face_id = uid
                                 face_confidence = np.mean(confirmations[uid])
                                 break
-                time.sleep(0.1)
+                time.sleep(0.05)
 
             if not face_id:
                 self._ui_update_stage("face", "failed", "No face recognized")

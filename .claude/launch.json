@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["webapp/frontend/node_modules/vite/bin/vite.js", "webapp/frontend"],
       "port": 5173
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "webapp.backend.main:app", "--port", "8000"],
+      "port": 8000
     }
   ]
 }
