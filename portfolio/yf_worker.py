@@ -37,6 +37,24 @@ def run_job(job: dict, timeout: float) -> Optional[object]:
         return None
 
 
+def fetch_history_isolated(tickers: list, timeout: float,
+                           period: str = "1y", max_parallel: int = 4) -> dict:
+    """Daily close history per ticker, one subprocess per symbol (same
+    poisoned-symbol isolation rationale as fetch_quotes_isolated).
+    Returns {ticker: [{"date": "YYYY-MM-DD", "close": float}, ...]} with
+    failed symbols simply absent."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def fetch_one(symbol):
+        rows = run_job({"kind": "history", "ticker": symbol,
+                        "period": period}, timeout)
+        return symbol, rows
+
+    with ThreadPoolExecutor(max_workers=max_parallel) as pool:
+        results = list(pool.map(fetch_one, tickers))
+    return {symbol: rows for symbol, rows in results if rows}
+
+
 def fetch_quotes_isolated(tickers: dict, timeout: float,
                           max_parallel: int = 4) -> list:
     """One subprocess per ticker. Some symbols deterministically segfault
@@ -112,6 +130,20 @@ def _job_quotes(tickers: dict) -> list:
     return rows
 
 
+def _job_history(ticker: str, period: str) -> list:
+    """Daily closes for one symbol as [{"date", "close"}, ...] — batched
+    yf.download only (never Ticker.history/fast_info, see docstring)."""
+    import yfinance as yf
+
+    data = yf.download(
+        [ticker], period=period, interval="1d", progress=False,
+        auto_adjust=True, group_by="ticker", threads=False,
+    )
+    closes = data[ticker]["Close"].dropna()
+    return [{"date": idx.strftime("%Y-%m-%d"), "close": round(float(v), 4)}
+            for idx, v in closes.items()]
+
+
 def main():
     job = json.loads(sys.stdin.read())
 
@@ -123,6 +155,8 @@ def main():
             result = _job_stats()
         elif job["kind"] == "quotes":
             result = _job_quotes(job["tickers"])
+        elif job["kind"] == "history":
+            result = _job_history(job["ticker"], job.get("period", "1y"))
         else:
             raise ValueError(f"Unknown job kind: {job['kind']}")
     finally:

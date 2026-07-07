@@ -4,6 +4,11 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import client from "../api/client";
+import AdvisoryPanel from "../components/portfolio/AdvisoryPanel";
+import CorrelationMatrixCard from "../components/portfolio/CorrelationMatrixCard";
+import HoldingsTab from "../components/portfolio/HoldingsTab";
+import InvestmentPlanCard from "../components/portfolio/InvestmentPlanCard";
+import VarCard from "../components/portfolio/VarCard";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -70,7 +75,31 @@ function RiskBadge({ risk }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+function TabSwitcher({ view, setView }) {
+  const tabs = [
+    { id: "optimizer", label: "📊 Optimizer" },
+    { id: "holdings", label: "💼 My Holdings" },
+  ];
+  return (
+    <div style={{
+      display: "inline-flex", gap: 4, marginBottom: 20, padding: 4,
+      background: "var(--card)", border: "1px solid var(--card-border)",
+      borderRadius: 10,
+    }}>
+      {tabs.map(t => (
+        <button key={t.id}
+          className={view === t.id ? "btn btn-primary" : "btn"}
+          style={{ padding: "7px 18px", fontSize: 14 }}
+          onClick={() => setView(t.id)}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Portfolio() {
+  const [view, setView] = useState("optimizer");
   const [profile, setProfile] = useState({
     risk_appetite: "medium", investment_horizon_years: 5,
     monthly_savings: "", available_balance: "",
@@ -170,7 +199,12 @@ export default function Portfolio() {
   return (
     <div className="page" style={{ maxWidth: 1100 }}>
       <h1>Investment Portfolio</h1>
+      <TabSwitcher view={view} setView={setView} />
 
+      {view === "holdings" && <HoldingsTab />}
+
+      {view === "optimizer" && (
+      <>
       {/* ── Investment Profile ──────────────────────────────────────────── */}
       <div className="card">
         <h2>Investment Profile</h2>
@@ -240,6 +274,9 @@ export default function Portfolio() {
             </div>
           </div>
 
+          {/* Monte-Carlo Value-at-Risk on this allocation */}
+          <VarCard refreshKey={recommendation} />
+
           {/* Pie chart */}
           <div className="card chart-card">
             <h2>Optimal Asset Allocation</h2>
@@ -256,6 +293,9 @@ export default function Portfolio() {
               </PieChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Exact units to buy from the live picks */}
+          <InvestmentPlanCard refreshKey={recommendation} />
 
           {/* ── Specific Investment Picks ────────────────────────────────── */}
           <h2 style={{ marginTop: 4 }}>
@@ -540,6 +580,14 @@ export default function Portfolio() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ── Correlation heat map (same data source as the optimizer) ─────── */}
+      <CorrelationMatrixCard assetStats={assetStats} />
+
+      {/* ── AI Advisory ───────────────────────────────────────────────────── */}
+      <AdvisoryPanel />
+      </>
       )}
     </div>
   );

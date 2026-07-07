@@ -77,3 +77,23 @@ class InvestmentProfileRequest(BaseModel):
     investment_horizon_years: int
     monthly_savings: float
     available_balance: float
+
+
+class HoldingRequest(BaseModel):
+    ticker: str
+    quantity: float
+    avg_buy_price: float
+    name: Optional[str] = None
+
+
+class HoldingUpdateRequest(BaseModel):
+    quantity: Optional[float] = None
+    avg_buy_price: Optional[float] = None
+
+
+class TradeRequest(BaseModel):
+    ticker: str
+    action: str  # BUY | SELL
+    price: float
+    quantity: float
+    name: Optional[str] = None

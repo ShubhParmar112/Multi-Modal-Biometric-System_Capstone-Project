@@ -155,6 +155,40 @@ class DatabaseManager:
                 )
             """)
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS portfolio_holdings (
+                    holding_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id         TEXT NOT NULL,
+                    ticker          TEXT NOT NULL,
+                    name            TEXT,
+                    quantity        REAL NOT NULL,
+                    avg_buy_price   REAL NOT NULL,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (user_id, ticker),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS portfolio_trades (
+                    trade_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id     TEXT NOT NULL,
+                    ticker      TEXT NOT NULL,
+                    action      TEXT NOT NULL CHECK (action IN ('BUY', 'SELL')),
+                    price       REAL NOT NULL,
+                    quantity    REAL NOT NULL,
+                    traded_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS daily_prices (
+                    ticker       TEXT NOT NULL,
+                    price_date   TEXT NOT NULL,
+                    close_price  REAL NOT NULL,
+                    PRIMARY KEY (ticker, price_date)
+                )
+            """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS categories (
                     name        TEXT PRIMARY KEY,
                     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -831,5 +865,157 @@ class DatabaseManager:
                 (profile_id,)
             ).fetchone()
             return dict(row) if row else None
+        finally:
+            conn.close()
+
+    # ── Portfolio holdings & trades ──────────────────────────────────────────
+
+    def get_holdings(self, user_id: str) -> List[Dict[str, Any]]:
+        """All of a user's holdings, largest cost basis first."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM portfolio_holdings WHERE user_id = ?
+                   ORDER BY quantity * avg_buy_price DESC""",
+                (user_id,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_holding(self, user_id: str, ticker: str) -> Optional[Dict[str, Any]]:
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM portfolio_holdings WHERE user_id = ? AND ticker = ?",
+                (user_id, ticker)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def upsert_holding(self, user_id: str, ticker: str, name: str,
+                       quantity: float, avg_buy_price: float) -> bool:
+        """Create or overwrite a holding's quantity and average price."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO portfolio_holdings
+                   (user_id, ticker, name, quantity, avg_buy_price)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id, ticker) DO UPDATE SET
+                       name = excluded.name,
+                       quantity = excluded.quantity,
+                       avg_buy_price = excluded.avg_buy_price,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (user_id, ticker, name, quantity, avg_buy_price)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save holding {ticker}: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def delete_holding(self, user_id: str, ticker: str) -> bool:
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "DELETE FROM portfolio_holdings WHERE user_id = ? AND ticker = ?",
+                (user_id, ticker)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Failed to delete holding {ticker}: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def record_portfolio_trade(self, user_id: str, ticker: str, action: str,
+                               price: float, quantity: float) -> Optional[int]:
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                """INSERT INTO portfolio_trades
+                   (user_id, ticker, action, price, quantity)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (user_id, ticker, action, price, quantity)
+            )
+            conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Failed to record trade {action} {ticker}: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def get_portfolio_trades(self, user_id: str,
+                             limit: int = 100) -> List[Dict[str, Any]]:
+        """A user's trade log, newest first."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM portfolio_trades WHERE user_id = ?
+                   ORDER BY traded_at DESC, trade_id DESC LIMIT ?""",
+                (user_id, limit)
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    # ── Daily prices ─────────────────────────────────────────────────────────
+
+    def upsert_daily_prices(self, ticker: str, rows: List[tuple]) -> int:
+        """Batch upsert of (price_date 'YYYY-MM-DD', close_price) tuples."""
+        conn = self._get_connection()
+        try:
+            conn.executemany(
+                """INSERT OR REPLACE INTO daily_prices
+                   (ticker, price_date, close_price) VALUES (?, ?, ?)""",
+                [(ticker, d, p) for d, p in rows]
+            )
+            conn.commit()
+            return len(rows)
+        except Exception as e:
+            logger.error(f"Failed to store prices for {ticker}: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def get_price_history(self, ticker: str,
+                          days: int = None) -> List[Dict[str, Any]]:
+        """Stored closes for a ticker, oldest first."""
+        conn = self._get_connection()
+        try:
+            sql = """SELECT price_date, close_price FROM daily_prices
+                     WHERE ticker = ? ORDER BY price_date DESC"""
+            params = [ticker]
+            if days:
+                sql += " LIMIT ?"
+                params.append(days)
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in reversed(rows)]
+        finally:
+            conn.close()
+
+    def get_latest_prices(self, tickers: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Newest stored close per ticker: {ticker: {price_date, close_price}}."""
+        if not tickers:
+            return {}
+        conn = self._get_connection()
+        try:
+            placeholders = ",".join("?" for _ in tickers)
+            rows = conn.execute(
+                f"""SELECT ticker, price_date, close_price FROM (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY ticker ORDER BY price_date DESC
+                        ) AS rn FROM daily_prices WHERE ticker IN ({placeholders})
+                    ) WHERE rn = 1""",
+                tickers
+            ).fetchall()
+            return {r["ticker"]: {"price_date": r["price_date"],
+                                  "close_price": r["close_price"]} for r in rows}
         finally:
             conn.close()

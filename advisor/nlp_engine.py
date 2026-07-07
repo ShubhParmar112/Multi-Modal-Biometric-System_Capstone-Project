@@ -235,3 +235,98 @@ def answer(user_id: str, question: str, history: list,
                     "Set GROQ_MODEL in .env to a current model "
                     "(e.g. llama-3.3-70b-versatile) and restart the server.")
         return "Sorry, I couldn't reach the AI service right now. Please try again in a moment."
+
+
+# ── One-shot portfolio advisory (Portfolio page panel) ───────────────────────
+
+_ADVISORY_PROMPT = """\
+Write a structured portfolio advisory for this user based ONLY on the live \
+financial data in the system prompt. Use exactly these five markdown \
+sections, each starting with "### ":
+
+### Health Summary
+2-3 sentences on the overall state of their finances and investments.
+
+### Key Observations
+3-4 bullet points on savings rate, spending, allocation, and diversification.
+
+### Allocation & Rebalancing
+Comment on the latest recommendation (or the lack of one) and what to \
+adjust. Reference the actual percentages.
+
+### Risk Factors & Market Outlook
+2-3 bullets grounded in the Live Market Snapshot figures.
+
+### Actionable Insight
+One concrete next step with a rupee amount where possible.
+
+Keep the whole advisory under 350 words. Format currency Indian-style with ₹.\
+"""
+
+
+def _advisory_fallback(user_id: str, db: DatabaseManager) -> str:
+    """Data-driven advisory used when Groq is unreachable — every figure
+    comes from the DB / market caches, nothing is invented."""
+    svc = PortfolioService(db)
+    profile = svc.get_profile(user_id)
+    rec = svc.get_latest_recommendation(user_id) if profile else None
+
+    lines = ["### Health Summary"]
+    if profile:
+        lines.append(
+            f"You invest with a **{profile['risk_appetite']}** risk appetite over a "
+            f"**{profile['investment_horizon_years']}-year** horizon, saving about "
+            f"**₹{profile['monthly_savings']:,.0f}** a month with "
+            f"**₹{profile['available_balance']:,.0f}** available to deploy.")
+    else:
+        lines.append("No investment profile yet — save one to get a "
+                     "personalised allocation.")
+
+    if rec:
+        lines.append("")
+        lines.append("### Allocation & Rebalancing")
+        for key, label in ASSET_LABELS.items():
+            pct = rec.get(f"{key}_pct") or 0
+            if pct > 0:
+                lines.append(f"- {label}: **{pct}%**")
+        lines.append(f"- Expected return **{rec['expected_return']}%** at "
+                     f"**{rec['expected_risk']}%** volatility "
+                     f"(Sharpe {rec['sharpe_ratio']}).")
+
+    lines.append("")
+    lines.append("### Actionable Insight")
+    if profile and not rec:
+        lines.append("Generate a recommendation to see your optimal asset mix.")
+    elif rec:
+        lines.append("Review the Smart Investment Plan below to convert these "
+                     "percentages into exact units, and rebalance anything "
+                     "drifted more than 5% from target.")
+    else:
+        lines.append("Fill in the Investment Profile form above to get started.")
+
+    return "\n".join(lines)
+
+
+def portfolio_advisory(user_id: str, db: DatabaseManager) -> dict:
+    """One-shot structured advisory for the Portfolio page.
+    Returns {"advisory": markdown, "is_fallback": bool}."""
+    client = _get_client()
+    if client is not None:
+        context = _build_context(user_id, db)
+        sys_msg = _SYSTEM.format(context=context)
+        try:
+            resp = client.chat.completions.create(
+                model=config.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": _ADVISORY_PROMPT},
+                ],
+                max_tokens=900,
+                temperature=0.3,
+            )
+            return {"advisory": resp.choices[0].message.content.strip(),
+                    "is_fallback": False}
+        except Exception as e:
+            logger.error(f"Portfolio advisory LLM call failed: {e}")
+
+    return {"advisory": _advisory_fallback(user_id, db), "is_fallback": True}

@@ -54,7 +54,11 @@
       "Bash(./venv/Scripts/python.exe -)",
       "Bash(./venv/Scripts/python.exe -c \"import sys; sys.path.insert\\(0,'.'\\); from webapp.backend.auth import create_access_token; print\\(create_access_token\\('USR001'\\)\\)\")",
       "Bash(./venv/Scripts/python.exe -c \"import sys; sys.path.insert\\(0,'.'\\); from database.db_manager import DatabaseManager; print\\(DatabaseManager\\(\\).get_accounts_by_user\\('USR002'\\)[0]['account_number']\\)\")",
-      "Bash(./venv/Scripts/python.exe -m py_compile ui/atm_interface.py face_recognition_module/face_recognizer.py banking/account_manager.py database/db_manager.py utils/email_service.py webapp/backend/auth.py webapp/backend/routers/settings.py portfolio/specific_picks.py main.py config.py)"
+      "Bash(./venv/Scripts/python.exe -m py_compile ui/atm_interface.py face_recognition_module/face_recognizer.py banking/account_manager.py database/db_manager.py utils/email_service.py webapp/backend/auth.py webapp/backend/routers/settings.py portfolio/specific_picks.py main.py config.py)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -m 70 -H 'Authorization: Bearer __CMDSUB_OUTPUT__' http://localhost:8000/api/portfolio/advisory)",
+      "Bash(tail -1 /tmp/tok.txt)",
+      "Bash(curl -s -m 10 -H 'Authorization: Bearer __TRACKED_VAR__' http://localhost:8000/api/portfolio/holdings)"
     ]
   }
 }
