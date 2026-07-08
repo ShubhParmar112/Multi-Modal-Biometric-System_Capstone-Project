@@ -141,6 +141,10 @@ PORTFOLIO_CASH_RATE = 0.035
 PORTFOLIO_CASH_VOLATILITY = 0.001
 PORTFOLIO_RISK_FREE_RATE = 0.04
 PORTFOLIO_VOLATILITY_CAPS = {"low": 0.06, "medium": 0.12, "high": 0.20}
+# Max weight any single asset may get from the optimizers (enforced as an
+# optimization bound, so the result is always diversified — never 100% in
+# one asset). Applies to both the asset-class and holdings optimizers.
+PORTFOLIO_MAX_WEIGHT = 0.40
 PORTFOLIO_HISTORY_PERIOD = "5y"
 PORTFOLIO_CACHE_HOURS = 24
 # Persisted market-data cache so restarts don't refetch 5y of history.

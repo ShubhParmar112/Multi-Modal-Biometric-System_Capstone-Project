@@ -22,6 +22,11 @@ VAR_SIMULATIONS = 10_000
 MIN_RETURN_POINTS = 30          # need this many aligned days for vol/corr/VaR
 HIGH_CORRELATION = 0.75
 
+# Diversification check thresholds.
+MAX_POSITION_PCT = 35.0         # single holding above this concentrates risk
+MAX_SECTOR_PCT = 50.0           # single sector above this concentrates risk
+MIN_POSITIONS = 3               # fewer names than this is under-diversified
+
 
 def _price_series(db: DatabaseManager, ticker: str) -> Dict[str, float]:
     return {row["price_date"]: row["close_price"]
@@ -42,13 +47,85 @@ def _log_returns_matrix(series: Dict[str, Dict[str, float]]) -> tuple:
     return tickers, dates, returns
 
 
+def _diversification_check(rows: list, sector_allocation: list,
+                           correlation_pairs: list) -> dict:
+    """Simple pass/warn verdict on concentration risk, with reasons."""
+    checks = []
+
+    top = max(rows, key=lambda r: r["weight_pct"]) if rows else None
+    if top and top["weight_pct"] > MAX_POSITION_PCT:
+        checks.append({
+            "status": "warn",
+            "label": "Single-holding concentration",
+            "detail": f"{top['name']} is {top['weight_pct']}% of the portfolio "
+                      f"(limit {MAX_POSITION_PCT:.0f}%).",
+        })
+    else:
+        checks.append({
+            "status": "pass",
+            "label": "Single-holding concentration",
+            "detail": f"No holding exceeds {MAX_POSITION_PCT:.0f}% of the portfolio.",
+        })
+
+    top_sector = sector_allocation[0] if sector_allocation else None
+    if top_sector and top_sector["pct"] > MAX_SECTOR_PCT:
+        checks.append({
+            "status": "warn",
+            "label": "Sector concentration",
+            "detail": f"{top_sector['sector']} is {top_sector['pct']}% of the "
+                      f"portfolio (limit {MAX_SECTOR_PCT:.0f}%).",
+        })
+    else:
+        checks.append({
+            "status": "pass",
+            "label": "Sector concentration",
+            "detail": f"No sector exceeds {MAX_SECTOR_PCT:.0f}% of the portfolio.",
+        })
+
+    if len(rows) < MIN_POSITIONS:
+        checks.append({
+            "status": "warn",
+            "label": "Number of holdings",
+            "detail": f"Only {len(rows)} holding(s) — aim for at least "
+                      f"{MIN_POSITIONS} to spread risk.",
+        })
+    else:
+        checks.append({
+            "status": "pass",
+            "label": "Number of holdings",
+            "detail": f"{len(rows)} holdings held.",
+        })
+
+    high_pairs = [p for p in correlation_pairs if p["high"]]
+    if high_pairs:
+        worst = high_pairs[0]
+        checks.append({
+            "status": "warn",
+            "label": "Correlated holdings",
+            "detail": f"{len(high_pairs)} pair(s) above {HIGH_CORRELATION} "
+                      f"correlation, e.g. {worst['ticker_a']} & "
+                      f"{worst['ticker_b']} ({worst['correlation']}) — they "
+                      "move together.",
+        })
+    elif correlation_pairs:
+        checks.append({
+            "status": "pass",
+            "label": "Correlated holdings",
+            "detail": f"No pair above {HIGH_CORRELATION} correlation.",
+        })
+
+    status = "warn" if any(c["status"] == "warn" for c in checks) else "pass"
+    return {"status": status, "checks": checks}
+
+
 def run_holdings_analytics(user_id: str, db: DatabaseManager) -> dict:
     holdings = db.get_holdings(user_id)
     warnings: List[str] = []
     if not holdings:
         return {"holdings": [], "summary": None, "sector_allocation": [],
                 "correlation_pairs": [], "equity_curve": [],
-                "benchmark_name": BENCHMARK_NAME, "warnings": []}
+                "benchmark_name": BENCHMARK_NAME, "warnings": [],
+                "diversification": None}
 
     tickers = [h["ticker"] for h in holdings]
     latest = db.get_latest_prices(tickers)
@@ -187,4 +264,6 @@ def run_holdings_analytics(user_id: str, db: DatabaseManager) -> dict:
             "correlation_pairs": correlation_pairs,
             "equity_curve": equity_curve,
             "benchmark_name": BENCHMARK_NAME,
-            "warnings": warnings}
+            "warnings": warnings,
+            "diversification": _diversification_check(
+                rows, sector_allocation, correlation_pairs)}

@@ -3,14 +3,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from database.db_manager import DatabaseManager
-from webapp.backend.auth import get_current_user, get_db
+from webapp.backend.auth import get_db, get_effective_user
 from webapp.backend.schemas import AccountResponse
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
 @router.get("/me", response_model=AccountResponse)
-def get_my_account(user=Depends(get_current_user),
+def get_my_account(user=Depends(get_effective_user),
                    db: DatabaseManager = Depends(get_db)):
     accounts = db.get_accounts_by_user(user["user_id"])
     if not accounts:

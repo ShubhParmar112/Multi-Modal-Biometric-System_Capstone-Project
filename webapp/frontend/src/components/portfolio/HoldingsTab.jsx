@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip,
-} from "recharts";
 import client from "../../api/client";
+import { useViewAs } from "../../context/ViewAsContext";
 import AddHoldingModal from "./AddHoldingModal";
 import EquityCurveChart from "./EquityCurveChart";
 import PriceChart from "./PriceChart";
@@ -108,6 +106,7 @@ function TradeForm({ holding, onDone, onCancel }) {
 }
 
 export default function HoldingsTab() {
+  const { isViewing } = useViewAs();
   const [analytics, setAnalytics] = useState(null);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -179,14 +178,16 @@ export default function HoldingsTab() {
         <p className="muted" style={{ margin: 0, fontSize: 13 }}>
           Track the securities you actually own — P&L and risk update from stored NSE closes.
         </p>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" onClick={refreshPrices} disabled={refreshing || holdings.length === 0}>
-            {refreshing ? "Fetching prices…" : "⟳ Refresh Prices"}
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            + Add Holding
-          </button>
-        </div>
+        {!isViewing && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn" onClick={refreshPrices} disabled={refreshing || holdings.length === 0}>
+              {refreshing ? "Fetching prices…" : "⟳ Refresh Prices"}
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+              + Add Holding
+            </button>
+          </div>
+        )}
       </div>
 
       {analytics?.warnings?.map((w, i) => (
@@ -219,7 +220,7 @@ export default function HoldingsTab() {
                 </thead>
                 <tbody>
                   {holdings.map(h => (
-                    <HoldingRows key={h.ticker} h={h}
+                    <HoldingRows key={h.ticker} h={h} readOnly={isViewing}
                       editing={editing} setEditing={setEditing} saveEdit={saveEdit}
                       tradingTicker={tradingTicker} setTradingTicker={setTradingTicker}
                       selectedTicker={selectedTicker} setSelectedTicker={setSelectedTicker}
@@ -239,36 +240,85 @@ export default function HoldingsTab() {
           <EquityCurveChart data={analytics.equity_curve}
             benchmarkName={analytics.benchmark_name} />
 
-          {/* Sector donut + correlation pairs */}
+          {/* Sector allocation (text) + diversification verdict */}
           <div className="grid-2">
             {analytics.sector_allocation.length > 0 && (
-              <div className="card chart-card">
+              <div className="card">
                 <h2>Sector Allocation</h2>
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie data={analytics.sector_allocation} dataKey="value"
-                      nameKey="sector" innerRadius={55} outerRadius={95}
-                      label={({ sector, pct }) => `${sector}: ${pct}%`}>
-                      {analytics.sector_allocation.map((_, i) => (
-                        <Cell key={i} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={v => fmtINR(v)} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
+                <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
+                  Portfolio weight per sector, from your holdings' sector metadata.
+                </p>
+                {analytics.sector_allocation.map((s, i) => (
+                  <div key={s.sector} style={{ marginBottom: 10 }}>
+                    <div style={{
+                      display: "flex", justifyContent: "space-between",
+                      alignItems: "baseline", marginBottom: 4, fontSize: 14,
+                    }}>
+                      <span>
+                        <span style={{
+                          display: "inline-block", width: 10, height: 10,
+                          borderRadius: 3, marginRight: 8,
+                          background: SECTOR_COLORS[i % SECTOR_COLORS.length],
+                        }} />
+                        <strong>{s.sector}</strong>
+                        <span className="muted" style={{ fontSize: 12, marginLeft: 8 }}>
+                          {fmtINR(s.value)}
+                        </span>
+                      </span>
+                      <strong>{s.pct}%</strong>
+                    </div>
+                    <div style={{
+                      height: 6, borderRadius: 3,
+                      background: "var(--card-border)", overflow: "hidden",
+                    }}>
+                      <div style={{
+                        width: `${Math.min(s.pct, 100)}%`, height: "100%",
+                        background: SECTOR_COLORS[i % SECTOR_COLORS.length],
+                      }} />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
             <div className="card">
               <h2>Diversification Check</h2>
-              {analytics.correlation_pairs.length === 0 ? (
-                <p className="muted">Need stored prices for at least two holdings —
-                  refresh prices to compute correlations.</p>
-              ) : (
+              {analytics.diversification && (
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
+                  padding: "6px 14px", borderRadius: 8, marginBottom: 12,
+                  fontWeight: 700, fontSize: 14,
+                  background: analytics.diversification.status === "pass"
+                    ? "rgba(0, 212, 170, 0.14)" : "rgba(245, 166, 35, 0.14)",
+                  border: analytics.diversification.status === "pass"
+                    ? "1px solid rgba(0, 212, 170, 0.4)"
+                    : "1px solid rgba(245, 166, 35, 0.4)",
+                  color: analytics.diversification.status === "pass"
+                    ? "var(--primary)" : "var(--warning)",
+                }}>
+                  {analytics.diversification.status === "pass"
+                    ? "✓ Well diversified" : "⚠ Concentration risk"}
+                </div>
+              )}
+              {analytics.diversification?.checks.map((c, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, fontSize: 13 }}>
+                  <span style={{
+                    color: c.status === "pass" ? "var(--primary)" : "var(--warning)",
+                    flexShrink: 0,
+                  }}>
+                    {c.status === "pass" ? "✓" : "⚠"}
+                  </span>
+                  <span>
+                    <strong>{c.label}:</strong>{" "}
+                    <span className="muted">{c.detail}</span>
+                  </span>
+                </div>
+              ))}
+
+              {analytics.correlation_pairs.length > 0 && (
                 <>
-                  <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
-                    Pairs above 0.75 move together and concentrate your risk.
+                  <p className="muted" style={{ fontSize: 12, margin: "14px 0 6px" }}>
+                    Pairwise correlations (above 0.75 move together):
                   </p>
                   <table className="table">
                     <thead>
@@ -332,7 +382,7 @@ export default function HoldingsTab() {
   );
 }
 
-function HoldingRows({ h, editing, setEditing, saveEdit, tradingTicker,
+function HoldingRows({ h, readOnly, editing, setEditing, saveEdit, tradingTicker,
                        setTradingTicker, selectedTicker, setSelectedTicker,
                        deleteHolding, load }) {
   const isEditing = editing?.ticker === h.ticker;
@@ -376,7 +426,9 @@ function HoldingRows({ h, editing, setEditing, saveEdit, tradingTicker,
         <td className="muted">{h.weight_pct}%</td>
         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}
           onClick={e => e.stopPropagation()}>
-          {isEditing ? (
+          {readOnly ? (
+            <span className="muted" style={{ fontSize: 11 }}>read-only</span>
+          ) : isEditing ? (
             <>
               <button className="btn btn-primary" style={{ padding: "4px 10px", fontSize: 12 }}
                 onClick={saveEdit}>Save</button>{" "}

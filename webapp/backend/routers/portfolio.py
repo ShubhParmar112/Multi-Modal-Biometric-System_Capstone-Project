@@ -5,10 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from advisor import nlp_engine
 from database.db_manager import DatabaseManager
-from portfolio import holdings_engine, market_data, optimizer, planner, risk, specific_picks
+from portfolio import (
+    holdings_engine, holdings_optimizer, market_data, optimizer, planner,
+    risk, specific_picks,
+)
 from portfolio.holdings_service import HoldingsService, search_tickers
 from portfolio.service import PortfolioService
-from webapp.backend.auth import get_current_user, get_db
+from webapp.backend.auth import get_current_user, get_db, get_effective_user
 from webapp.backend.schemas import (
     HoldingRequest, HoldingUpdateRequest, InvestmentProfileRequest, TradeRequest,
 )
@@ -37,7 +40,7 @@ def _profile_and_recommendation(service: PortfolioService, user_id: str):
 
 
 @router.get("/profile")
-def get_profile(user=Depends(get_current_user),
+def get_profile(user=Depends(get_effective_user),
                 service: PortfolioService = Depends(get_portfolio_service)):
     profile = service.get_profile(user["user_id"])
     if not profile:
@@ -68,7 +71,7 @@ def generate_recommendation(user=Depends(get_current_user),
 
 
 @router.get("/recommendation")
-def get_recommendation(user=Depends(get_current_user),
+def get_recommendation(user=Depends(get_effective_user),
                        service: PortfolioService = Depends(get_portfolio_service)):
     result = service.get_latest_recommendation(user["user_id"])
     if result is None:
@@ -94,7 +97,7 @@ def get_picks(risk_appetite: str = "medium", user=Depends(get_current_user)):
 # ── Risk, plan & advisory (on the recommended allocation) ────────────────────
 
 @router.get("/var")
-def get_var(user=Depends(get_current_user),
+def get_var(user=Depends(get_effective_user),
             service: PortfolioService = Depends(get_portfolio_service)):
     profile, rec = _profile_and_recommendation(service, user["user_id"])
     amount = profile.get("available_balance") or 0.0
@@ -102,7 +105,7 @@ def get_var(user=Depends(get_current_user),
 
 
 @router.get("/investment-plan")
-def get_investment_plan(user=Depends(get_current_user),
+def get_investment_plan(user=Depends(get_effective_user),
                         service: PortfolioService = Depends(get_portfolio_service)):
     profile, rec = _profile_and_recommendation(service, user["user_id"])
     amount = profile.get("available_balance") or 0.0
@@ -113,7 +116,7 @@ def get_investment_plan(user=Depends(get_current_user),
 
 
 @router.get("/advisory")
-def get_advisory(user=Depends(get_current_user),
+def get_advisory(user=Depends(get_effective_user),
                  db: DatabaseManager = Depends(get_db)):
     return nlp_engine.portfolio_advisory(user["user_id"], db)
 
@@ -126,7 +129,7 @@ def ticker_search(q: str, user=Depends(get_current_user)):
 
 
 @router.get("/holdings")
-def list_holdings(user=Depends(get_current_user),
+def list_holdings(user=Depends(get_effective_user),
                   service: HoldingsService = Depends(get_holdings_service)):
     return service.list_holdings(user["user_id"])
 
@@ -164,7 +167,7 @@ def delete_holding(ticker: str, user=Depends(get_current_user),
 
 
 @router.get("/trades")
-def list_trades(limit: int = 100, user=Depends(get_current_user),
+def list_trades(limit: int = 100, user=Depends(get_effective_user),
                 service: HoldingsService = Depends(get_holdings_service)):
     return service.list_trades(user["user_id"], limit)
 
@@ -193,6 +196,23 @@ def holding_price_history(ticker: str, days: int = None,
 
 
 @router.get("/holdings/analytics")
-def holdings_analytics(user=Depends(get_current_user),
+def holdings_analytics(user=Depends(get_effective_user),
                        db: DatabaseManager = Depends(get_db)):
     return holdings_engine.run_holdings_analytics(user["user_id"], db)
+
+
+# ── Holdings-based optimization (real portfolio, stored prices) ──────────────
+
+@router.get("/holdings/optimizer")
+def holdings_optimizer_view(user=Depends(get_effective_user),
+                            db: DatabaseManager = Depends(get_db)):
+    return holdings_optimizer.optimize_holdings(user["user_id"], db)
+
+
+@router.get("/holdings/plan")
+def holdings_plan(amount: float, user=Depends(get_effective_user),
+                  db: DatabaseManager = Depends(get_db)):
+    if amount <= 0:
+        raise HTTPException(status_code=400,
+                            detail="Amount must be greater than zero")
+    return holdings_optimizer.build_plan(user["user_id"], db, amount)

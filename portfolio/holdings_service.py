@@ -12,6 +12,7 @@ import config
 from database.db_manager import DatabaseManager
 from portfolio import yf_worker
 from portfolio.specific_picks import DEBT_UNIVERSE, EQUITY_UNIVERSE, GOLD_UNIVERSE
+from utils import email_service
 from utils.logger import logger
 
 # NIFTY 50 — the natural INR benchmark (also the optimizer's equity proxy).
@@ -124,7 +125,22 @@ class HoldingsService:
                 self.db.delete_holding(user_id, ticker)
 
         self.db.record_portfolio_trade(user_id, ticker, action, price, quantity)
-        return {"holding": self.db.get_holding(user_id, ticker),
+        updated = self.db.get_holding(user_id, ticker)
+
+        # Confirmation mail — a notification, never part of the trade itself.
+        try:
+            user = self.db.get_user(user_id)
+            email_service.send_trade_email(
+                user, action, ticker,
+                (updated or holding or {}).get("name")
+                or name or lookup_name(ticker) or ticker,
+                quantity, price,
+                remaining_qty=updated["quantity"] if updated else 0,
+            )
+        except Exception as e:
+            logger.error(f"Trade alert failed for {user_id}: {e}")
+
+        return {"holding": updated,
                 "trades": self.db.get_portfolio_trades(user_id, limit=20)}
 
     def list_trades(self, user_id: str, limit: int = 100) -> List[dict]:

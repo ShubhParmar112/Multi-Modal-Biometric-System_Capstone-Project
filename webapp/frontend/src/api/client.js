@@ -11,6 +11,14 @@ client.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Read-only "view as" mode (beneficiary access): the backend only honors
+  // this header on read endpoints, and only if a grant exists.
+  const viewAs = localStorage.getItem("smartbank_view_as");
+  if (viewAs) {
+    try {
+      config.headers["X-View-As"] = JSON.parse(viewAs).user_id;
+    } catch { /* corrupted value — ignore */ }
+  }
   return config;
 });
 

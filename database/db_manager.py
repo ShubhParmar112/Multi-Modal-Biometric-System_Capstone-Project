@@ -207,6 +207,18 @@ class DatabaseManager:
                 )
             """)
 
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS account_access_grants (
+                    grant_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    granter_user_id  TEXT NOT NULL,
+                    grantee_user_id  TEXT NOT NULL,
+                    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (granter_user_id, grantee_user_id),
+                    FOREIGN KEY (granter_user_id) REFERENCES users(user_id),
+                    FOREIGN KEY (grantee_user_id) REFERENCES users(user_id)
+                )
+            """)
+
             # Migration: add `category` to transactions if it doesn't exist yet
             # (CREATE TABLE IF NOT EXISTS won't retroactively add columns).
             existing_cols = {row[1] for row in
@@ -221,6 +233,16 @@ class DatabaseManager:
                          conn.execute("PRAGMA table_info(users)").fetchall()}
             if "email" not in user_cols:
                 conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+
+            # Migration: per-user web theme preference ("dark"/"light"/"system").
+            if "theme" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN theme TEXT")
+
+            # Migration: per-user 2FA toggle for the web login (0 = off).
+            if "two_factor_enabled" not in user_cols:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER DEFAULT 0"
+                )
 
             # Seed default categories once.
             count = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
@@ -382,6 +404,39 @@ class DatabaseManager:
             return True
         except Exception as e:
             logger.error(f"Failed to update email: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def update_user_theme(self, user_id: str, theme: str) -> bool:
+        """Persist the user's web theme preference (dark/light/system)."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                "UPDATE users SET theme = ? WHERE user_id = ?",
+                (theme, user_id)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update theme: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def set_two_factor(self, user_id: str, enabled: bool) -> bool:
+        """Turn the web-login 2FA step on or off for a user."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                "UPDATE users SET two_factor_enabled = ? WHERE user_id = ?",
+                (1 if enabled else 0, user_id)
+            )
+            conn.commit()
+            logger.info(f"2FA {'enabled' if enabled else 'disabled'} for {user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update 2FA setting: {e}")
             return False
         finally:
             conn.close()
@@ -734,6 +789,94 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to delete beneficiary: {e}")
             return False
+        finally:
+            conn.close()
+
+    # ── Account access grants (beneficiary read access) ──────
+
+    def add_access_grant(self, granter_user_id: str,
+                         grantee_user_id: str) -> bool:
+        """Grant another user read access to the granter's data."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO account_access_grants
+                   (granter_user_id, grantee_user_id) VALUES (?, ?)""",
+                (granter_user_id, grantee_user_id)
+            )
+            conn.commit()
+            logger.success(
+                f"Access grant: {granter_user_id} -> {grantee_user_id}")
+            return True
+        except sqlite3.IntegrityError:
+            logger.warning(
+                f"Access grant already exists: {granter_user_id} -> {grantee_user_id}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to add access grant: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def delete_access_grant(self, granter_user_id: str, grant_id: int) -> bool:
+        """Revoke a grant (scoped to the granting user)."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                """DELETE FROM account_access_grants
+                   WHERE grant_id = ? AND granter_user_id = ?""",
+                (grant_id, granter_user_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Failed to delete access grant: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_access_grants(self, granter_user_id: str) -> List[Dict[str, Any]]:
+        """All grants this user has given, with the grantee's name."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """SELECT g.grant_id, g.grantee_user_id, g.created_at, u.name
+                   FROM account_access_grants g
+                   JOIN users u ON u.user_id = g.grantee_user_id
+                   WHERE g.granter_user_id = ? ORDER BY g.created_at DESC""",
+                (granter_user_id,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_accounts_shared_with(self, grantee_user_id: str) -> List[Dict[str, Any]]:
+        """Accounts (granters) this user may view."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """SELECT g.granter_user_id AS user_id, u.name, g.created_at
+                   FROM account_access_grants g
+                   JOIN users u ON u.user_id = g.granter_user_id
+                   WHERE g.grantee_user_id = ? AND u.is_active = 1
+                   ORDER BY g.created_at DESC""",
+                (grantee_user_id,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def has_access_grant(self, granter_user_id: str,
+                         grantee_user_id: str) -> bool:
+        """True if grantee may view granter's data."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                """SELECT 1 FROM account_access_grants
+                   WHERE granter_user_id = ? AND grantee_user_id = ?""",
+                (granter_user_id, grantee_user_id)
+            ).fetchone()
+            return row is not None
         finally:
             conn.close()
 

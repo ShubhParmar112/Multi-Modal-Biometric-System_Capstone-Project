@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import client from "../api/client";
+import { useAdvisor } from "../context/AdvisorContext";
 
 const SUGGESTIONS = [
   "What is my current balance?",
@@ -101,16 +101,10 @@ function TypingIndicator() {
 }
 
 export default function Advisor() {
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      text: "Hi! I'm your SmartBank AI Financial Advisor. I have access to your real account data — ask me anything about your spending, savings, investments, or balance.",
-    },
-  ]);
-  // history sent to API: only role + content (no display-only "text" key)
-  const [history, setHistory] = useState([]);
-  const [input, setInput]     = useState("");
-  const [loading, setLoading] = useState(false);
+  // The conversation lives in AdvisorContext so it is shared with the
+  // mini widget on the Portfolio page — maximize/minimize keeps context.
+  const { messages, loading, send: sendShared, clearChat } = useAdvisor();
+  const [input, setInput] = useState("");
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
 
@@ -122,34 +116,8 @@ export default function Advisor() {
     const message = (text ?? input).trim();
     if (!message || loading) return;
     setInput("");
-
-    const userMsg = { role: "user", text: message };
-    setMessages(prev => [...prev, userMsg]);
-    setLoading(true);
-
-    try {
-      const res = await client.post("/api/advisor/chat", {
-        message,
-        history,   // send previous turns so the LLM has context
-      });
-      const reply = res.data.response;
-
-      setMessages(prev => [...prev, { role: "assistant", text: reply }]);
-      // Append both turns to history for next request
-      setHistory(prev => [
-        ...prev,
-        { role: "user",      content: message },
-        { role: "assistant", content: reply   },
-      ]);
-    } catch {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        text: "Sorry, I couldn't reach the server. Please try again.",
-      }]);
-    } finally {
-      setLoading(false);
-      inputRef.current?.focus();
-    }
+    await sendShared(message);
+    inputRef.current?.focus();
   }
 
   function handleKey(e) {
@@ -157,14 +125,6 @@ export default function Advisor() {
       e.preventDefault();
       send();
     }
-  }
-
-  function clearChat() {
-    setMessages([{
-      role: "assistant",
-      text: "Chat cleared. What would you like to know?",
-    }]);
-    setHistory([]);
   }
 
   return (

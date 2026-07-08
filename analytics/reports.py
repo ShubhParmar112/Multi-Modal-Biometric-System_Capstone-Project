@@ -112,6 +112,25 @@ class FinanceAnalytics:
             for k in month_keys
         ]
 
+    def balance_history(self, user_id: str, limit: int = 500) -> List[Dict]:
+        """Account balance after each transaction, oldest first — the
+        running balance timeline implied by balance_after."""
+        account = self._primary_account(user_id)
+        if not account:
+            return []
+        txns = self.db.get_transactions(account["account_id"], limit=limit)
+        points = [
+            {
+                "timestamp": t["timestamp"],
+                "balance": round(t["balance_after"], 2),
+                "txn_type": t["txn_type"],
+                "amount": t["amount"],
+            }
+            for t in txns if t["status"] != "blocked"
+        ]
+        points.reverse()  # get_transactions returns newest first
+        return points
+
     def cash_flow(self, user_id: str, months: int = 6) -> List[Dict]:
         month_keys = [f"{y:04d}-{m:02d}" for y, m in _last_n_months(months)]
         inflow = {k: 0.0 for k in month_keys}

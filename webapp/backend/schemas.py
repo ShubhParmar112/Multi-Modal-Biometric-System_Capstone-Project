@@ -27,6 +27,23 @@ class BeneficiaryRequest(BaseModel):
     account_number: str
 
 
+class FaceVerifyRequest(BaseModel):
+    challenge_token: str
+    image: str  # data-URL or bare base64 webcam frame
+
+
+class TwoFactorRequest(BaseModel):
+    enabled: bool
+
+
+class ThemeRequest(BaseModel):
+    theme: str  # "dark" | "light" | "system"
+
+
+class AccessGrantRequest(BaseModel):
+    account_number: str  # the beneficiary's SmartBank account number
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

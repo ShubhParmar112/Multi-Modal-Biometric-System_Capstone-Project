@@ -4,11 +4,14 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import client from "../api/client";
+import MiniAdvisor from "../components/MiniAdvisor";
 import AdvisoryPanel from "../components/portfolio/AdvisoryPanel";
 import CorrelationMatrixCard from "../components/portfolio/CorrelationMatrixCard";
+import HoldingsOptimizerCard from "../components/portfolio/HoldingsOptimizerCard";
 import HoldingsTab from "../components/portfolio/HoldingsTab";
 import InvestmentPlanCard from "../components/portfolio/InvestmentPlanCard";
 import VarCard from "../components/portfolio/VarCard";
+import { useViewAs } from "../context/ViewAsContext";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -99,6 +102,7 @@ function TabSwitcher({ view, setView }) {
 }
 
 export default function Portfolio() {
+  const { isViewing } = useViewAs();
   const [view, setView] = useState("optimizer");
   const [profile, setProfile] = useState({
     risk_appetite: "medium", investment_horizon_years: 5,
@@ -238,16 +242,23 @@ export default function Portfolio() {
               onChange={e => setProfile(p => ({ ...p, available_balance: e.target.value }))} />
           </div>
         </div>
-        <button className="btn btn-primary" onClick={saveProfile}>Save Profile</button>
+        {!isViewing && (
+          <button className="btn btn-primary" onClick={saveProfile}>Save Profile</button>
+        )}
         {profileMsg === "success" && <p className="success-text" style={{ marginTop: 8 }}>Profile saved.</p>}
         {profileMsg === "error"   && <p className="error-text"   style={{ marginTop: 8 }}>Failed to save.</p>}
       </div>
 
+      {/* ── Holdings-driven optimizer (dynamic, from real data) ─────────── */}
+      <HoldingsOptimizerCard defaultAmount={profile.available_balance} />
+
       {/* ── Generate Button ─────────────────────────────────────────────── */}
-      <button className="btn btn-primary" onClick={generateRecommendation}
-        disabled={generating} style={{ marginBottom: 24 }}>
-        {generating ? "Optimizing portfolio…" : "Generate Recommendation"}
-      </button>
+      {!isViewing && (
+        <button className="btn btn-primary" onClick={generateRecommendation}
+          disabled={generating} style={{ marginBottom: 24 }}>
+          {generating ? "Optimizing portfolio…" : "Generate Recommendation"}
+        </button>
+      )}
 
       {/* ── Recommendation Output ───────────────────────────────────────── */}
       {recommendation && (
@@ -589,6 +600,9 @@ export default function Portfolio() {
       <AdvisoryPanel />
       </>
       )}
+
+      {/* Docked mini AI Advisor — same conversation as the /advisor tab */}
+      <MiniAdvisor />
     </div>
   );
 }

@@ -25,6 +25,12 @@ def _portfolio_stats(weights: np.ndarray, returns_vec: np.ndarray,
     return ret, vol
 
 
+def max_weight_cap(n_assets: int) -> float:
+    """Per-asset weight ceiling. A cap below 1/n makes 'sum to 1' infeasible,
+    so it is floored there."""
+    return max(config.PORTFOLIO_MAX_WEIGHT, 1.0 / n_assets)
+
+
 def _load_inputs():
     stats = market_data.get_asset_statistics()
     returns_vec = np.array([stats["returns"][a] for a in ASSET_ORDER])
@@ -61,6 +67,7 @@ def optimize_portfolio(risk_appetite: str) -> dict:
     n = len(ASSET_ORDER)
     cap = config.PORTFOLIO_VOLATILITY_CAPS[risk_appetite]
     rf = config.PORTFOLIO_RISK_FREE_RATE
+    w_cap = max_weight_cap(n)
 
     def neg_return(w):
         return -float(w @ returns_vec)
@@ -69,7 +76,7 @@ def optimize_portfolio(risk_appetite: str) -> dict:
         {"type": "eq", "fun": lambda w: np.sum(w) - 1},
         {"type": "ineq", "fun": lambda w: cap - np.sqrt(max(w @ cov @ w, 0.0))},
     ]
-    bounds = [(0.0, 1.0)] * n
+    bounds = [(0.0, w_cap)] * n
     x0 = np.full(n, 1.0 / n)
 
     result = minimize(neg_return, x0, method="SLSQP", bounds=bounds,
@@ -77,7 +84,7 @@ def optimize_portfolio(risk_appetite: str) -> dict:
                       options={"maxiter": 200, "ftol": 1e-9})
 
     weights = result.x if result.success else x0
-    weights = np.clip(weights, 0.0, None)
+    weights = np.clip(weights, 0.0, w_cap)
     weights = weights / weights.sum()
 
     ret, vol = _portfolio_stats(weights, returns_vec, cov)
@@ -108,11 +115,22 @@ def efficient_frontier(n_points: int = 20) -> list:
     """
     _, returns_vec, cov = _load_inputs()
     n = len(ASSET_ORDER)
-    bounds = [(0.0, 1.0)] * n
+    w_cap = max_weight_cap(n)
+    bounds = [(0.0, w_cap)] * n
     x0 = np.full(n, 1.0 / n)
 
     min_var_return = _min_variance_return(returns_vec, cov, bounds, x0)
-    targets = np.linspace(min_var_return, float(returns_vec.max()), n_points)
+    # Highest return reachable under the per-asset cap: fill the cap into
+    # the best-returning assets until the weights sum to 1.
+    order = np.argsort(returns_vec)[::-1]
+    remaining, max_return = 1.0, 0.0
+    for i in order:
+        w = min(w_cap, remaining)
+        max_return += w * float(returns_vec[i])
+        remaining -= w
+        if remaining <= 1e-12:
+            break
+    targets = np.linspace(min_var_return, max_return, n_points)
     frontier = []
 
     for target in targets:

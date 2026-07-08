@@ -18,7 +18,22 @@ export function AuthProvider({ children }) {
 
   async function login(userId, pin) {
     const res = await client.post("/api/auth/login", { user_id: userId, pin });
+    // With 2FA enabled the PIN only earns a challenge — the caller must
+    // complete verifyTwoFactor() before a session exists.
+    if (res.data.requires_2fa) return res.data;
     storeSession(res.data);
+    return res.data;
+  }
+
+  async function verifyTwoFactor(challengeToken, imageDataUrl) {
+    // Face matching runs a CPU model server-side — allow it extra time.
+    const res = await client.post(
+      "/api/auth/face-verify",
+      { challenge_token: challengeToken, image: imageDataUrl },
+      { timeout: 45000 }
+    );
+    storeSession(res.data);
+    return res.data;
   }
 
   async function loginWithFace(imageDataUrl) {
@@ -35,11 +50,13 @@ export function AuthProvider({ children }) {
   function logout() {
     localStorage.removeItem("smartbank_token");
     localStorage.removeItem("smartbank_user");
+    localStorage.removeItem("smartbank_view_as");
     setUser(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, loginWithFace, logout }}>
+    <AuthContext.Provider
+      value={{ user, login, loginWithFace, verifyTwoFactor, logout }}>
       {children}
     </AuthContext.Provider>
   );

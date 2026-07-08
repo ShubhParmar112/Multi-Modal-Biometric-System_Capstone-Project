@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from banking.account_manager import BankingService
 from database.db_manager import DatabaseManager
-from webapp.backend.auth import get_current_user, get_db
+from webapp.backend.auth import get_current_user, get_db, get_effective_user
 from webapp.backend.schemas import (
     DepositRequest, WithdrawRequest, TransferRequest, TransactionActionResponse
 )
@@ -45,6 +45,6 @@ def transfer(req: TransferRequest, user=Depends(get_current_user),
 
 
 @router.get("/mini-statement")
-def mini_statement(limit: int = 10, user=Depends(get_current_user),
+def mini_statement(limit: int = 10, user=Depends(get_effective_user),
                    banking: BankingService = Depends(get_banking_service)):
     return banking.get_mini_statement(user["user_id"], limit)

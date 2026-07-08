@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 
 from analytics.reports import FinanceAnalytics
 from database.db_manager import DatabaseManager
-from webapp.backend.auth import get_current_user, get_db
+from webapp.backend.auth import get_current_user, get_db, get_effective_user
 from webapp.backend.schemas import CategoryRequest
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -17,27 +17,33 @@ def get_analytics(db: DatabaseManager = Depends(get_db)) -> FinanceAnalytics:
 
 @router.get("/monthly-report")
 def monthly_report(year: Optional[int] = None, month: Optional[int] = None,
-                   user=Depends(get_current_user),
+                   user=Depends(get_effective_user),
                    analytics: FinanceAnalytics = Depends(get_analytics)):
     return analytics.monthly_report(user["user_id"], year, month)
 
 
 @router.get("/spending-trend")
-def spending_trend(months: int = 6, user=Depends(get_current_user),
+def spending_trend(months: int = 6, user=Depends(get_effective_user),
                    analytics: FinanceAnalytics = Depends(get_analytics)):
     return analytics.spending_trend(user["user_id"], months)
 
 
 @router.get("/savings-trend")
-def savings_trend(months: int = 6, user=Depends(get_current_user),
+def savings_trend(months: int = 6, user=Depends(get_effective_user),
                   analytics: FinanceAnalytics = Depends(get_analytics)):
     return analytics.savings_trend(user["user_id"], months)
 
 
 @router.get("/cash-flow")
-def cash_flow(months: int = 6, user=Depends(get_current_user),
+def cash_flow(months: int = 6, user=Depends(get_effective_user),
              analytics: FinanceAnalytics = Depends(get_analytics)):
     return analytics.cash_flow(user["user_id"], months)
+
+
+@router.get("/balance-history")
+def balance_history(limit: int = 500, user=Depends(get_effective_user),
+                    analytics: FinanceAnalytics = Depends(get_analytics)):
+    return analytics.balance_history(user["user_id"], limit)
 
 
 @router.get("/categories")
