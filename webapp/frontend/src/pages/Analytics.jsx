@@ -81,9 +81,10 @@ export default function Analytics() {
           {pieData.length === 0 ? (
             <p className="muted">No expenses this month.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={100} label>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart margin={{ top: 24, bottom: 8, left: 8, right: 8 }}>
+                <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={90}
+                  label={({ value }) => fmt(value)}>
                   {pieData.map((_, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
                   ))}

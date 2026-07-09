@@ -5,7 +5,6 @@ import {
 } from "recharts";
 import client from "../api/client";
 import MiniAdvisor from "../components/MiniAdvisor";
-import AdvisoryPanel from "../components/portfolio/AdvisoryPanel";
 import CorrelationMatrixCard from "../components/portfolio/CorrelationMatrixCard";
 import HoldingsOptimizerCard from "../components/portfolio/HoldingsOptimizerCard";
 import HoldingsTab from "../components/portfolio/HoldingsTab";
@@ -595,9 +594,6 @@ export default function Portfolio() {
 
       {/* ── Correlation heat map (same data source as the optimizer) ─────── */}
       <CorrelationMatrixCard assetStats={assetStats} />
-
-      {/* ── AI Advisory ───────────────────────────────────────────────────── */}
-      <AdvisoryPanel />
       </>
       )}
 

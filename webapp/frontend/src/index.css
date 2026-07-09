@@ -766,3 +766,11 @@ select.input {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── Chart tooltips ─────────────────────────────────── */
+/* Recharts renders the tooltip label (e.g. the hovered date) in a faint
+   gray on the white tooltip. Darken it so the date is clearly readable. */
+.recharts-tooltip-label {
+  color: #1B2333 !important;
+  font-weight: 600 !important;
+}

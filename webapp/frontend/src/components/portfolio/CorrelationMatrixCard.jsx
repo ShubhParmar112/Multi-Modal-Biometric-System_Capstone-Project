@@ -5,12 +5,16 @@ const LABELS = {
 const ORDER = ["equity", "debt", "gold", "fd", "cash", "mutual_funds"];
 const HIGH = 0.75;
 
-// Green (diversifying) → red (concentrated) cell tint.
+// Continuous diverging heatmap tint: positive correlations shade red
+// (move together / concentration), negative shade green (hedge), and the
+// intensity scales with the magnitude so every cell is coloured.
 function cellColor(v) {
-  if (v >= HIGH) return "rgba(255, 84, 112, 0.35)";
-  if (v >= 0.4) return "rgba(245, 166, 35, 0.25)";
-  if (v <= -0.2) return "rgba(0, 212, 170, 0.30)";
-  return "transparent";
+  if (v == null) return "transparent";
+  const mag = Math.min(Math.abs(v), 1);
+  const alpha = 0.08 + 0.72 * mag;
+  return v >= 0
+    ? `rgba(233, 69, 96, ${alpha.toFixed(3)})`   // red
+    : `rgba(0, 212, 170, ${alpha.toFixed(3)})`;  // green
 }
 
 // Renders the 6×6 correlation matrix already returned by /asset-stats.
@@ -36,24 +40,38 @@ export default function CorrelationMatrixCard({ assetStats }) {
         negative pairs (green) hedge each other.
       </p>
       <div style={{ overflowX: "auto" }}>
-        <table className="table" style={{ minWidth: 480, textAlign: "center" }}>
+        <table style={{
+          minWidth: 480, borderCollapse: "separate", borderSpacing: 3,
+          textAlign: "center", margin: "8px auto 4px",
+        }}>
           <thead>
             <tr>
               <th></th>
-              {ORDER.map(a => <th key={a} style={{ textAlign: "center" }}>{LABELS[a]}</th>)}
+              {ORDER.map(a => (
+                <th key={a} style={{
+                  padding: "6px 8px", fontSize: 12, fontWeight: 600,
+                  color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4,
+                }}>{LABELS[a]}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {ORDER.map(a => (
               <tr key={a}>
-                <td><strong>{LABELS[a]}</strong></td>
+                <td style={{
+                  padding: "6px 10px", fontSize: 12, fontWeight: 600, textAlign: "right",
+                  color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4,
+                }}>{LABELS[a]}</td>
                 {ORDER.map(b => {
                   const v = corr[a]?.[b];
+                  const diag = a === b;
                   return (
                     <td key={b} style={{
-                      background: a === b ? "transparent" : cellColor(v),
-                      color: a === b ? "var(--muted)" : "var(--text)",
+                      width: 56, height: 44, borderRadius: 6,
+                      background: diag ? "var(--card-border)" : cellColor(v),
+                      color: diag ? "var(--muted)" : "var(--text)",
                       fontFamily: "var(--mono)", fontSize: 13,
+                      fontWeight: diag ? 400 : 600, textAlign: "center",
                     }}>
                       {v != null ? v.toFixed(2) : "—"}
                     </td>
