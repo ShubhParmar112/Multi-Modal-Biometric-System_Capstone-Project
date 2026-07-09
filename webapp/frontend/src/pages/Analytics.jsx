@@ -36,8 +36,9 @@ export default function Analytics() {
         setSpendingTrend(spendRes.data);
         setSavingsTrend(savingsRes.data);
         setCashFlow(flowRes.data);
-        setBalanceHistory(balanceRes.data.map((p) => ({
+        setBalanceHistory(balanceRes.data.map((p, i) => ({
           ...p,
+          i,
           day: (p.timestamp || "").slice(0, 10),
         })));
       } catch {
@@ -81,16 +82,16 @@ export default function Analytics() {
           {pieData.length === 0 ? (
             <p className="muted">No expenses this month.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={330}>
               <PieChart margin={{ top: 24, bottom: 8, left: 8, right: 8 }}>
-                <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={90}
+                <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={88}
                   label={({ value }) => fmt(value)}>
                   {pieData.map((_, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(v) => fmt(v)} />
-                <Legend />
+                <Legend wrapperStyle={{ paddingTop: 18 }} />
               </PieChart>
             </ResponsiveContainer>
           )}
@@ -99,12 +100,12 @@ export default function Analytics() {
         <div className="card chart-card">
           <h2>Spending &amp; Savings Trend</h2>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={trendData}>
+            <LineChart data={trendData} margin={{ top: 5, right: 28, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2A3A5C" />
-              <XAxis dataKey="month" stroke="#7B8794" interval={0} />
-              <YAxis stroke="#7B8794" />
+              <XAxis dataKey="month" stroke="#7B8794" interval={0} fontSize={11} />
+              <YAxis stroke="#7B8794" fontSize={11} />
               <Tooltip formatter={(v) => fmt(v)} />
-              <Legend />
+              <Legend wrapperStyle={{ paddingTop: 10 }} />
               <Line type="monotone" dataKey="spending" stroke="#E94560" name="Spending" />
               <Line type="monotone" dataKey="netSavings" stroke="#00D4AA" name="Net Savings" />
             </LineChart>
@@ -114,12 +115,12 @@ export default function Analytics() {
         <div className="card chart-card">
           <h2>Cash Flow</h2>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={cashFlow}>
+            <BarChart data={cashFlow} margin={{ top: 5, right: 28, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2A3A5C" />
-              <XAxis dataKey="month" stroke="#7B8794" interval={0} />
-              <YAxis stroke="#7B8794" />
+              <XAxis dataKey="month" stroke="#7B8794" interval={0} fontSize={11} />
+              <YAxis stroke="#7B8794" fontSize={11} />
               <Tooltip formatter={(v) => fmt(v)} />
-              <Legend />
+              <Legend wrapperStyle={{ paddingTop: 10 }} />
               <Bar dataKey="inflow" fill="#00D4AA" name="Inflow" />
               <Bar dataKey="outflow" fill="#E94560" name="Outflow" />
             </BarChart>
@@ -135,7 +136,8 @@ export default function Analytics() {
             <p className="muted">No transactions yet.</p>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={balanceHistory}>
+              <AreaChart data={balanceHistory}
+                margin={{ top: 5, right: 18, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#00D4AA" stopOpacity={0.35} />
@@ -143,11 +145,13 @@ export default function Analytics() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2A3A5C" />
-                <XAxis dataKey="timestamp" stroke="#7B8794" fontSize={11}
-                  tickFormatter={(t) => (t || "").slice(0, 10)} />
+                {/* Unique integer index → evenly spaced points that don't
+                    collapse on repeated dates; label maps back to the date. */}
+                <XAxis dataKey="i" stroke="#7B8794" fontSize={11}
+                  tickFormatter={(i) => balanceHistory[i]?.day || ""} />
                 <YAxis stroke="#7B8794" fontSize={11} />
                 <Tooltip formatter={(v) => fmt(v)}
-                  labelFormatter={(t) => (t || "").slice(0, 10)} />
+                  labelFormatter={(i) => balanceHistory[i]?.day || ""} />
                 <Area type="monotone" dataKey="balance" stroke="#00D4AA"
                   strokeWidth={2} fill="url(#balanceFill)" name="Balance" />
               </AreaChart>

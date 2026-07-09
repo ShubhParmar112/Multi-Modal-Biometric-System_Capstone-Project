@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Legend,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import client from "../api/client";
@@ -31,12 +31,20 @@ function StatementCharts({ statement, fmt }) {
         byDay.get(day).debit += t.amount;
         running -= t.amount;
       }
-      cumulative.push({ day, net: Math.round(running * 100) / 100 });
+      cumulative.push({ i: cumulative.length, day, net: Math.round(running * 100) / 100 });
     }
     return { daily: [...byDay.values()], cumulative };
   }, [statement]);
 
   if (statement.length === 0) return null;
+
+  // Split the net-flow area at zero: green fill above the axis, red below.
+  const nets = cumulative.map((c) => c.net);
+  const maxNet = Math.max(...nets, 0);
+  const minNet = Math.min(...nets, 0);
+  const zeroOffset = maxNet <= 0 ? 0
+    : minNet >= 0 ? 1
+    : maxNet / (maxNet - minNet);
 
   return (
     <div className="grid-2">
@@ -64,14 +72,33 @@ function StatementCharts({ statement, fmt }) {
           Running net of credits minus debits across the visible rows.
         </p>
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={cumulative}>
+          <AreaChart data={cumulative} margin={{ top: 5, right: 18, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="netFlowFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset={zeroOffset} stopColor="#00D4AA" stopOpacity={0.35} />
+                <stop offset={zeroOffset} stopColor="#E94560" stopOpacity={0.35} />
+              </linearGradient>
+              <linearGradient id="netFlowStroke" x1="0" y1="0" x2="0" y2="1">
+                <stop offset={zeroOffset} stopColor="#00D4AA" stopOpacity={1} />
+                <stop offset={zeroOffset} stopColor="#E94560" stopOpacity={1} />
+              </linearGradient>
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#2A3A5C" />
-            <XAxis dataKey="day" stroke="#7B8794" fontSize={11} />
+            {/* Unique integer index keeps every transaction a distinct point
+                (dates repeat), so the hover dot tracks the cursor exactly. */}
+            <XAxis dataKey="i" stroke="#7B8794" fontSize={11}
+              tickFormatter={(i) => cumulative[i]?.day || ""} />
             <YAxis stroke="#7B8794" fontSize={11} />
-            <Tooltip formatter={(v) => fmt(v)} />
-            <Line type="monotone" dataKey="net" stroke="#00D4AA"
-              strokeWidth={2} dot={false} name="Net Flow" />
-          </LineChart>
+            <Tooltip
+              itemStyle={{ color: "#1B2333" }}
+              labelFormatter={(i) => cumulative[i]?.day || ""}
+              formatter={(v) => [
+                <span style={{ color: v < 0 ? "#E94560" : "#00D4AA", fontWeight: 600 }}>{fmt(v)}</span>,
+                "Net Flow",
+              ]} />
+            <Area type="monotone" dataKey="net" stroke="url(#netFlowStroke)"
+              strokeWidth={2} fill="url(#netFlowFill)" dot={false} name="Net Flow" />
+          </AreaChart>
         </ResponsiveContainer>
       </div>
     </div>
