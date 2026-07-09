@@ -41,8 +41,8 @@ def fetch_history_isolated(tickers: list, timeout: float,
                            period: str = "1y", max_parallel: int = 4) -> dict:
     """Daily close history per ticker, one subprocess per symbol (same
     poisoned-symbol isolation rationale as fetch_quotes_isolated).
-    Returns {ticker: [{"date": "YYYY-MM-DD", "close": float}, ...]} with
-    failed symbols simply absent."""
+    Returns {ticker: [{"date": "YYYY-MM-DD", "close": float, "volume": int},
+    ...]} with failed symbols simply absent."""
     from concurrent.futures import ThreadPoolExecutor
 
     def fetch_one(symbol):
@@ -131,17 +131,29 @@ def _job_quotes(tickers: dict) -> list:
 
 
 def _job_history(ticker: str, period: str) -> list:
-    """Daily closes for one symbol as [{"date", "close"}, ...] — batched
-    yf.download only (never Ticker.history/fast_info, see docstring)."""
+    """Daily closes + volume for one symbol as
+    [{"date", "close", "volume"}, ...] — batched yf.download only (never
+    Ticker.history/fast_info, see docstring). volume is int, 0 when the
+    Volume cell is NaN or missing."""
+    import math
+
     import yfinance as yf
 
     data = yf.download(
         [ticker], period=period, interval="1d", progress=False,
         auto_adjust=True, group_by="ticker", threads=False,
     )
-    closes = data[ticker]["Close"].dropna()
-    return [{"date": idx.strftime("%Y-%m-%d"), "close": round(float(v), 4)}
-            for idx, v in closes.items()]
+    frame = data[ticker].dropna(subset=["Close"])
+    has_volume = "Volume" in frame.columns
+    rows = []
+    for idx, r in frame.iterrows():
+        vol = r["Volume"] if has_volume else None
+        rows.append({
+            "date":   idx.strftime("%Y-%m-%d"),
+            "close":  round(float(r["Close"]), 4),
+            "volume": 0 if vol is None or math.isnan(vol) else int(vol),
+        })
+    return rows
 
 
 def main():

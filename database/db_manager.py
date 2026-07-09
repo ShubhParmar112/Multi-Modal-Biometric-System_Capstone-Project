@@ -244,6 +244,12 @@ class DatabaseManager:
                     "ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER DEFAULT 0"
                 )
 
+            # Migration: add `volume` to daily_prices for market-movers ranking.
+            price_cols = {row[1] for row in
+                          conn.execute("PRAGMA table_info(daily_prices)").fetchall()}
+            if "volume" not in price_cols:
+                conn.execute("ALTER TABLE daily_prices ADD COLUMN volume REAL")
+
             # Seed default categories once.
             count = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
             if count == 0:
@@ -1111,13 +1117,23 @@ class DatabaseManager:
     # ── Daily prices ─────────────────────────────────────────────────────────
 
     def upsert_daily_prices(self, ticker: str, rows: List[tuple]) -> int:
-        """Batch upsert of (price_date 'YYYY-MM-DD', close_price) tuples."""
+        """Batch upsert of (price_date 'YYYY-MM-DD', close_price) or
+        (price_date, close_price, volume) tuples. Volume defaults to NULL
+        when a 2-tuple is passed."""
         conn = self._get_connection()
         try:
+            prepared = []
+            for row in rows:
+                if len(row) == 3:
+                    d, p, v = row
+                else:
+                    (d, p), v = row, None
+                prepared.append((ticker, d, p, v))
             conn.executemany(
                 """INSERT OR REPLACE INTO daily_prices
-                   (ticker, price_date, close_price) VALUES (?, ?, ?)""",
-                [(ticker, d, p) for d, p in rows]
+                   (ticker, price_date, close_price, volume)
+                   VALUES (?, ?, ?, ?)""",
+                prepared
             )
             conn.commit()
             return len(rows)
@@ -1160,5 +1176,78 @@ class DatabaseManager:
             ).fetchall()
             return {r["ticker"]: {"price_date": r["price_date"],
                                   "close_price": r["close_price"]} for r in rows}
+        finally:
+            conn.close()
+
+    # ── Market movers & trade leaders ────────────────────────────────────────
+
+    def get_market_movers(self, limit: int = 5) -> Dict[str, List[Dict[str, Any]]]:
+        """Top gainers/losers by 1-day % change and most-active by latest
+        volume, computed from the two most recent stored closes per ticker
+        (same ROW_NUMBER window as get_latest_prices). The '^NSEI' index is
+        excluded. Each row is {ticker, close_price, change_pct, volume}."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """SELECT ticker, close_price, volume, rn FROM (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY ticker ORDER BY price_date DESC
+                        ) AS rn FROM daily_prices WHERE ticker != '^NSEI'
+                    ) WHERE rn <= 2"""
+            ).fetchall()
+        finally:
+            conn.close()
+
+        latest, previous = {}, {}
+        for r in rows:
+            (latest if r["rn"] == 1 else previous)[r["ticker"]] = r
+
+        movers = []
+        for ticker, cur in latest.items():
+            prev = previous.get(ticker)
+            # ponytail: a ticker needs two stored closes to have a change_pct
+            # (and to appear in most_active) — single-close tickers are skipped.
+            if not prev or not prev["close_price"]:
+                continue
+            change_pct = round(
+                (cur["close_price"] - prev["close_price"])
+                / prev["close_price"] * 100, 2)
+            movers.append({
+                "ticker": ticker,
+                "close_price": cur["close_price"],
+                "change_pct": change_pct,
+                "volume": cur["volume"] or 0,
+            })
+
+        gainers = sorted(movers, key=lambda m: m["change_pct"], reverse=True)
+        losers = sorted(movers, key=lambda m: m["change_pct"])
+        most_active = sorted(movers, key=lambda m: m["volume"], reverse=True)
+        return {
+            "gainers": gainers[:limit],
+            "losers": losers[:limit],
+            "most_active": most_active[:limit],
+        }
+
+    def get_trade_leaders(self, limit: int = 5) -> Dict[str, List[Dict[str, Any]]]:
+        """Most-bought / most-sold tickers across all users' portfolio_trades,
+        each side ranked by total traded quantity. Rows are
+        {ticker, total_quantity, trade_count}."""
+        conn = self._get_connection()
+        try:
+            def leaders(action: str) -> List[Dict[str, Any]]:
+                rows = conn.execute(
+                    """SELECT ticker, SUM(quantity) AS total_quantity,
+                              COUNT(*) AS trade_count
+                       FROM portfolio_trades WHERE action = ?
+                       GROUP BY ticker
+                       ORDER BY total_quantity DESC LIMIT ?""",
+                    (action, limit)
+                ).fetchall()
+                return [{"ticker": r["ticker"],
+                         "total_quantity": r["total_quantity"],
+                         "trade_count": r["trade_count"]} for r in rows]
+
+            return {"most_bought": leaders("BUY"),
+                    "most_sold": leaders("SELL")}
         finally:
             conn.close()

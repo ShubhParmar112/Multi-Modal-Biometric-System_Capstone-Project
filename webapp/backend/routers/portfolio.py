@@ -128,6 +128,14 @@ def ticker_search(q: str, user=Depends(get_current_user)):
     return search_tickers(q)
 
 
+@router.get("/market/movers")
+def market_movers(user=Depends(get_current_user),
+                  db: DatabaseManager = Depends(get_db)):
+    """Purely from stored data — no yfinance, no network. Gainers/losers/
+    most-active from daily_prices, plus most-bought/-sold from the trade log."""
+    return {**db.get_market_movers(), **db.get_trade_leaders()}
+
+
 @router.get("/holdings")
 def list_holdings(user=Depends(get_effective_user),
                   service: HoldingsService = Depends(get_holdings_service)):

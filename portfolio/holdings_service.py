@@ -6,6 +6,8 @@ project's pick universes, and price-history refresh into daily_prices
 via the isolated yfinance worker.
 """
 
+import csv
+import os
 from typing import List, Optional
 
 import config
@@ -19,25 +21,65 @@ from utils.logger import logger
 BENCHMARK_TICKER = "^NSEI"
 BENCHMARK_NAME = "NIFTY 50"
 
-# One searchable universe from the symbol tables that already exist.
-SEARCH_UNIVERSE = {}
-for _src in (EQUITY_UNIVERSE, GOLD_UNIVERSE, DEBT_UNIVERSE):
-    SEARCH_UNIVERSE.update(_src)
+_UNIVERSE_CSV = os.path.join(config.BASE_DIR, "data", "universe.csv")
+
+
+def _load_search_universe() -> dict:
+    """The NSE-wide universe from data/universe.csv, with the project's pick
+    tables overlaid on top (pick tables win — keeps the ETFs/bonds those
+    tables add searchable and with their curated names/sectors). Same
+    {ticker: {"name", "sector"}} shape as before, so lookup_name/
+    lookup_sector are untouched. If universe.csv hasn't been built yet, falls
+    back to just the three pick universes."""
+    universe = {}
+    try:
+        with open(_UNIVERSE_CSV, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                ticker = row["ticker"].strip().upper()
+                universe[ticker] = {"name": row.get("name", "").strip(),
+                                    "sector": row.get("sector", "").strip()}
+    except FileNotFoundError:
+        pass  # not built yet — the pick tables below are enough on their own
+    for _src in (EQUITY_UNIVERSE, GOLD_UNIVERSE, DEBT_UNIVERSE):
+        universe.update(_src)
+    return universe
+
+
+# One searchable universe, loaded once at import time.
+SEARCH_UNIVERSE = _load_search_universe()
+
+
+def _bare(ticker: str) -> str:
+    """Symbol without the .NS suffix (TCS.NS -> TCS)."""
+    return ticker[:-3] if ticker.upper().endswith(".NS") else ticker
 
 
 def search_tickers(query: str, limit: int = 8) -> List[dict]:
-    """Substring match on symbol or company name — purely local, no network."""
-    q = query.strip().lower()
+    """Ranked local search over the universe — purely local, no network.
+
+    Tier 0: exact symbol match (query "TCS" or "TCS.NS" hits TCS.NS)
+    Tier 1: symbol prefix
+    Tier 2: substring in symbol or name
+    Stable insertion order within each tier (dicts preserve it)."""
+    q = query.strip().upper()
     if not q:
         return []
-    results = []
-    for symbol, meta in SEARCH_UNIVERSE.items():
-        if q in symbol.lower() or q in meta["name"].lower():
-            results.append({"ticker": symbol, "name": meta["name"],
-                            "sector": meta.get("sector", "")})
-        if len(results) >= limit:
-            break
-    return results
+    q_sym = _bare(q)          # "TCS.NS" -> "TCS", "TCS" -> "TCS"
+    q_lower = q.lower()
+
+    exact, prefix, substr = [], [], []
+    for ticker, meta in SEARCH_UNIVERSE.items():
+        sym = _bare(ticker).upper()
+        row = {"ticker": ticker, "name": meta["name"],
+               "sector": meta.get("sector", "")}
+        if sym == q_sym or ticker.upper() == q:
+            exact.append(row)
+        elif sym.startswith(q_sym):
+            prefix.append(row)
+        elif q_lower in ticker.lower() or q_lower in meta["name"].lower():
+            substr.append(row)
+
+    return (exact + prefix + substr)[:limit]
 
 
 def lookup_name(ticker: str) -> Optional[str]:
@@ -162,7 +204,8 @@ class HoldingsService:
             rows = histories.get(ticker)
             if rows:
                 stored[ticker] = self.db.upsert_daily_prices(
-                    ticker, [(r["date"], r["close"]) for r in rows])
+                    ticker,
+                    [(r["date"], r["close"], r.get("volume", 0)) for r in rows])
             else:
                 failed.append(ticker)
 

@@ -53,27 +53,33 @@ export default function AddHoldingModal({ onClose, onSaved }) {
         <h2 style={{ marginTop: 0 }}>Add Holding</h2>
 
         <label className="field-label">Search NSE stocks / ETFs</label>
-        <input className="input" autoFocus placeholder="e.g. Reliance, GOLDBEES, gilt…"
-          value={selected ? `${selected.name} (${selected.ticker})` : query}
-          onChange={e => { setSelected(null); setQuery(e.target.value); }} />
+        {/* Relative wrapper so the results float over the fields below
+            instead of pushing them down (the modal keeps a stable height). */}
+        <div style={{ position: "relative" }}>
+          <input className="input" autoFocus placeholder="e.g. Reliance, GOLDBEES, gilt…"
+            value={selected ? `${selected.name} (${selected.ticker})` : query}
+            onChange={e => { setSelected(null); setQuery(e.target.value); }} />
 
-        {results.length > 0 && !selected && (
-          <div style={{
-            border: "1px solid var(--card-border)", borderRadius: 8,
-            marginTop: 4, maxHeight: 180, overflowY: "auto",
-          }}>
-            {results.map(r => (
-              <div key={r.ticker}
-                style={{ padding: "8px 12px", cursor: "pointer", fontSize: 14 }}
-                onClick={() => { setSelected(r); setResults([]); }}>
-                <strong>{r.name}</strong>
-                <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
-                  {r.ticker} · {r.sector}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+          {results.length > 0 && !selected && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
+              background: "var(--card-solid)", boxShadow: "var(--shadow-md)",
+              border: "1px solid var(--card-border)", borderRadius: 8,
+              marginTop: 4, maxHeight: 220, overflowY: "auto",
+            }}>
+              {results.map(r => (
+                <div key={r.ticker}
+                  style={{ padding: "8px 12px", cursor: "pointer", fontSize: 14 }}
+                  onClick={() => { setSelected(r); setResults([]); }}>
+                  <strong>{r.name}</strong>
+                  <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                    {r.ticker} · {r.sector}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="grid-2" style={{ gap: 12, marginTop: 8 }}>
           <div>

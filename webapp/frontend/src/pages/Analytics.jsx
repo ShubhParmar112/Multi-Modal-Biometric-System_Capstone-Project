@@ -101,7 +101,7 @@ export default function Analytics() {
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2A3A5C" />
-              <XAxis dataKey="month" stroke="#7B8794" />
+              <XAxis dataKey="month" stroke="#7B8794" interval={0} />
               <YAxis stroke="#7B8794" />
               <Tooltip formatter={(v) => fmt(v)} />
               <Legend />
@@ -116,7 +116,7 @@ export default function Analytics() {
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={cashFlow}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2A3A5C" />
-              <XAxis dataKey="month" stroke="#7B8794" />
+              <XAxis dataKey="month" stroke="#7B8794" interval={0} />
               <YAxis stroke="#7B8794" />
               <Tooltip formatter={(v) => fmt(v)} />
               <Legend />
@@ -143,9 +143,11 @@ export default function Analytics() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2A3A5C" />
-                <XAxis dataKey="day" stroke="#7B8794" fontSize={11} />
+                <XAxis dataKey="timestamp" stroke="#7B8794" fontSize={11}
+                  tickFormatter={(t) => (t || "").slice(0, 10)} />
                 <YAxis stroke="#7B8794" fontSize={11} />
-                <Tooltip formatter={(v) => fmt(v)} />
+                <Tooltip formatter={(v) => fmt(v)}
+                  labelFormatter={(t) => (t || "").slice(0, 10)} />
                 <Area type="monotone" dataKey="balance" stroke="#00D4AA"
                   strokeWidth={2} fill="url(#balanceFill)" name="Balance" />
               </AreaChart>

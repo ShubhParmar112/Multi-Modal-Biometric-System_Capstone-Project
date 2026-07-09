@@ -53,12 +53,19 @@ export default function InvestmentPlanCard({ refreshKey }) {
               {bucket.pct}% → {fmtINR(bucket.amount)}
             </span>
           </div>
-          <table className="table">
+          {/* Fixed layout + shared column widths so the "units × price" and
+              cost columns line up across every sector's table. */}
+          <table className="table" style={{ tableLayout: "fixed", width: "100%" }}>
+            <colgroup>
+              <col style={{ width: "50%" }} />
+              <col style={{ width: "30%" }} />
+              <col style={{ width: "20%" }} />
+            </colgroup>
             <tbody>
               {bucket.items.map((item, i) => (
                 <tr key={i}>
                   <td>{item.name}</td>
-                  <td className="muted">
+                  <td className="muted" style={{ textAlign: "right" }}>
                     {item.units != null
                       ? `${item.units} × ${fmtINR(item.price)}`
                       : ""}

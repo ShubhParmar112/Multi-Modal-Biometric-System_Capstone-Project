@@ -62,7 +62,11 @@
       "Bash(cat .claude/launch.json)",
       "Bash(ls webapp/frontend/node_modules/vite/bin/vite.js)",
       "Bash(wc -l)",
-      "Bash(grep -oE \"^[A-Z_]+=\" .env)"
+      "Bash(grep -oE \"^[A-Z_]+=\" .env)",
+      "Bash(./venv/Scripts/python.exe -c \"from portfolio.specific_picks import EQUITY_UNIVERSE; import itertools; print\\(dict\\(itertools.islice\\(EQUITY_UNIVERSE.items\\(\\),2\\)\\)\\)\")",
+      "Bash(ls data *)",
+      "Bash(./venv/Scripts/python.exe -m tests.test_ticker_search)",
+      "Bash(./venv/Scripts/python.exe -m py_compile scripts/build_universe.py scripts/nightly_prices.py tests/test_ticker_search.py portfolio/holdings_service.py portfolio/yf_worker.py database/db_manager.py webapp/backend/routers/portfolio.py)"
     ]
   }
 }
