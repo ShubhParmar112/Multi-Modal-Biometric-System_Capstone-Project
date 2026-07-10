@@ -774,3 +774,60 @@ select.input {
   color: #1B2333 !important;
   font-weight: 600 !important;
 }
+
+/* ── Optimizer page pager (PREV · label · NEXT) ─────── */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pager-label {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pager-btn {
+  background: none;
+  border: none;
+  padding: 6px 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+  /* Fixed cyan on hover — the same in both light and dark themes. */
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.pager-btn:hover:not(:disabled),
+.pager-btn:focus-visible:not(:disabled) {
+  color: #00D4AA;
+  background: rgba(0, 212, 170, 0.10);
+  outline: none;
+}
+
+.pager-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ── Smooth fade when switching tabs / optimizer sub-pages ─── */
+
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tab-pane {
+  animation: tabFadeIn 0.35s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-pane { animation: none; }
+}

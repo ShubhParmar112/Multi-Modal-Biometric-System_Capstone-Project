@@ -28,9 +28,39 @@ const SECTION_ICONS = {
   equity: "📈", mutual_funds: "🏦", gold: "🥇", debt: "📋", fd: "🏛️",
 };
 
+// Each pick section is tinted with a very soft pastel of the same colour that
+// asset gets in the allocation pie chart, so the section and its pie slice
+// read as the same asset at a glance.
+const ASSET_SECTION_COLORS = {
+  equity: ASSET_COLORS.Equity,
+  mutual_funds: ASSET_COLORS["Mutual Funds"],
+  gold: ASSET_COLORS.Gold,
+  debt: ASSET_COLORS.Debt,
+  fd: ASSET_COLORS.FD,
+};
+
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
 function fmt(n) { return n != null ? `₹${Number(n).toLocaleString("en-IN")}` : "—"; }
+
+// Soft pastel card background + matching subtle border from an asset colour
+// (8-bit hex alpha suffixes: 1A ≈ 10%, 33 ≈ 20%).
+function softCard(color) {
+  return { background: `${color}1A`, borderColor: `${color}33` };
+}
+
+// Average FD rate across all banks for one column. Each bank publishes a
+// "lo% – hi%" range, so we take each bank's midpoint and average those.
+function avgFdRate(fdRows, key) {
+  const mids = [];
+  for (const r of fdRows || []) {
+    const nums = String(r[key] || "").match(/\d+(?:\.\d+)?/g);
+    if (!nums || !nums.length) continue;
+    mids.push(nums.map(Number).reduce((a, b) => a + b, 0) / nums.length);
+  }
+  if (!mids.length) return null;
+  return mids.reduce((a, b) => a + b, 0) / mids.length;
+}
 
 function ChangeChip({ value }) {
   if (value == null) return <span className="muted">—</span>;
@@ -109,27 +139,29 @@ function TabSwitcher({ view, setView }) {
   );
 }
 
-// Prev / Next pager for the two sub-pages of the Optimizer tab. Sits right
-// under the Optimizer / My Holdings tabs.
-function OptimizerPager({ page, setPage }) {
+// Prev / Next pager for the two sub-pages of the Optimizer tab: PREV on the
+// far left, the page label centred, NEXT on the far right. Buttons turn theme
+// cyan on hover (see `.pager-btn` in index.css). Rendered both above and below
+// the page content for easier reach. `edge` ("top" | "bottom") only tweaks
+// spacing.
+function OptimizerPager({ page, setPage, edge = "top" }) {
   const PAGES = ["Optimizer & Analytics", "Specific Investment Picks"];
+  const last = PAGES.length - 1;
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 10, marginBottom: 20,
-    }}>
-      <button className="btn" disabled={page === 0}
-        style={{ padding: "6px 14px", fontSize: 14 }}
+    <div className="pager" style={
+      edge === "top" ? { marginBottom: 20 } : { marginTop: 24 }
+    }>
+      <button className="pager-btn" disabled={page === 0}
         onClick={() => setPage(p => Math.max(0, p - 1))}>
-        ← Previous
+        ‹ PREV
       </button>
-      <button className="btn" disabled={page === PAGES.length - 1}
-        style={{ padding: "6px 14px", fontSize: 14 }}
-        onClick={() => setPage(p => Math.min(PAGES.length - 1, p + 1))}>
-        Next →
-      </button>
-      <span className="muted" style={{ fontSize: 13 }}>
+      <span className="pager-label">
         Page {page + 1} of {PAGES.length} · {PAGES[page]}
       </span>
+      <button className="pager-btn" disabled={page === last}
+        onClick={() => setPage(p => Math.min(last, p + 1))}>
+        NEXT ›
+      </button>
     </div>
   );
 }
@@ -256,16 +288,18 @@ export default function Portfolio() {
       <h1>Investment Portfolio</h1>
       <TabSwitcher view={view} setView={setView} />
 
-      {view === "holdings" && <HoldingsTab />}
+      {view === "holdings" && (
+        <div className="tab-pane"><HoldingsTab /></div>
+      )}
 
       {view === "optimizer" && (
-      <>
-      {/* ── Prev / Next pager for the two optimizer sub-pages ───────────── */}
-      <OptimizerPager page={optimizerPage} setPage={setOptimizerPage} />
+      <div className="tab-pane">
+      {/* ── Prev / Next pager for the two optimizer sub-pages (top) ─────── */}
+      <OptimizerPager page={optimizerPage} setPage={setOptimizerPage} edge="top" />
 
       {/* ═══ PAGE 1 — Optimizer & Analytics ═════════════════════════════ */}
       {optimizerPage === 0 && (
-      <>
+      <div className="tab-pane">
       {/* ── Investment Profile ──────────────────────────────────────────── */}
       <div className="card">
         <h2>Investment Profile</h2>
@@ -368,12 +402,12 @@ export default function Portfolio() {
           <InvestmentPlanCard refreshKey={recommendation} />
         </>
       )}
-      </>
+      </div>
       )}
 
       {/* ═══ PAGE 2 — Specific Investment Picks ═════════════════════════ */}
       {optimizerPage === 1 && (
-        <>
+        <div className="tab-pane">
           {/* ── Specific Investment Picks ────────────────────────────────── */}
           <h2 style={{ marginTop: 4 }}>
             Specific Investment Picks
@@ -389,7 +423,7 @@ export default function Portfolio() {
             <>
               {/* ── EQUITY ─────────────────────────────────────────────── */}
               {alloc.equity_pct > 0 && picks.equity.length > 0 && (
-                <div className="card">
+                <div className="card" style={softCard(ASSET_SECTION_COLORS.equity)}>
                   <SectionHeader icon={SECTION_ICONS.equity}
                     title={`Equity — Top NSE Picks for ${profile.risk_appetite.charAt(0).toUpperCase() + profile.risk_appetite.slice(1)} Risk (Live)`}
                     pct={alloc.equity_pct} />
@@ -437,7 +471,7 @@ export default function Portfolio() {
 
               {/* ── MUTUAL FUNDS ────────────────────────────────────────── */}
               {alloc.mutual_funds_pct > 0 && picks.mutual_funds.length > 0 && (
-                <div className="card">
+                <div className="card" style={softCard(ASSET_SECTION_COLORS.mutual_funds)}>
                   <SectionHeader icon={SECTION_ICONS.mutual_funds}
                     title={`Mutual Funds — ${profile.risk_appetite.charAt(0).toUpperCase() + profile.risk_appetite.slice(1)}-Risk Picks`}
                     pct={alloc.mutual_funds_pct} />
@@ -484,7 +518,7 @@ export default function Portfolio() {
 
               {/* ── GOLD ────────────────────────────────────────────────── */}
               {alloc.gold_pct > 0 && picks.gold.length > 0 && (
-                <div className="card">
+                <div className="card" style={softCard(ASSET_SECTION_COLORS.gold)}>
                   <SectionHeader icon={SECTION_ICONS.gold}
                     title="Gold — ETFs &amp; Sovereign Gold Bonds (Live)"
                     pct={alloc.gold_pct} />
@@ -532,7 +566,7 @@ export default function Portfolio() {
 
               {/* ── DEBT ────────────────────────────────────────────────── */}
               {alloc.debt_pct > 0 && (
-                <div className="card">
+                <div className="card" style={softCard(ASSET_SECTION_COLORS.debt)}>
                   <SectionHeader icon={SECTION_ICONS.debt}
                     title="Debt — Exchange-Traded Fixed Income (Live)"
                     pct={alloc.debt_pct} />
@@ -575,33 +609,41 @@ export default function Portfolio() {
 
               {/* ── FIXED DEPOSITS ───────────────────────────────────────── */}
               {alloc.fd_pct > 0 && (
-                <div className="card">
+                <div className="card" style={softCard(ASSET_SECTION_COLORS.fd)}>
                   <SectionHeader icon={SECTION_ICONS.fd}
-                    title="Fixed Deposits — Best Bank Rates (Live)"
+                    title="Fixed Deposits — Our FD Rates (Live)"
                     pct={alloc.fd_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
-                    Live rate ranges across tenures, best offers first. Verify with the bank before investing. DICGC insured up to ₹5L per bank.
+                    As an independent bank, our indicative FD rate is benchmarked to
+                    the market average across {picks.fd.length} leading banks' live
+                    published rates. DICGC insured up to ₹5L.
                   </p>
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="table" style={{ minWidth: 560 }}>
-                      <thead>
-                        <tr>
-                          <th>Bank</th>
-                          <th>Regular Rate (all tenures)</th>
-                          <th>Senior Citizen Rate</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {picks.fd.map(fd => (
-                          <tr key={fd.bank}>
-                            <td><strong style={{ color: "var(--text)" }}>{fd.bank}</strong></td>
-                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{fd.rate_regular}</td>
-                            <td style={{ color: "var(--primary)", fontWeight: 600 }}>{fd.rate_senior}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  {(() => {
+                    const reg = avgFdRate(picks.fd, "rate_regular");
+                    const sen = avgFdRate(picks.fd, "rate_senior");
+                    return (
+                      <div className="grid-2" style={{ gap: 16 }}>
+                        <div className="card" style={{ textAlign: "center", margin: 0 }}>
+                          <p className="muted" style={{ margin: "0 0 4px" }}>
+                            Regular Rate (all tenures)
+                          </p>
+                          <div style={{ fontSize: 32, fontWeight: 700, color: "var(--primary)" }}>
+                            {reg != null ? `${reg.toFixed(2)}%` : "—"}
+                          </div>
+                          <span className="muted" style={{ fontSize: 12 }}>p.a. (average)</span>
+                        </div>
+                        <div className="card" style={{ textAlign: "center", margin: 0 }}>
+                          <p className="muted" style={{ margin: "0 0 4px" }}>
+                            Senior Citizen Rate
+                          </p>
+                          <div style={{ fontSize: 32, fontWeight: 700, color: "var(--primary)" }}>
+                            {sen != null ? `${sen.toFixed(2)}%` : "—"}
+                          </div>
+                          <span className="muted" style={{ fontSize: 12 }}>p.a. (average)</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </>
@@ -667,9 +709,12 @@ export default function Portfolio() {
 
       {/* ── Correlation heat map (same data source as the optimizer) ─────── */}
       <CorrelationMatrixCard assetStats={assetStats} />
-      </>
+      </div>
       )}
-      </>
+
+      {/* ── Prev / Next pager (bottom) — same controls for easier reach ── */}
+      <OptimizerPager page={optimizerPage} setPage={setOptimizerPage} edge="bottom" />
+      </div>
       )}
 
       {/* Docked mini AI Advisor — same conversation as the /advisor tab */}
