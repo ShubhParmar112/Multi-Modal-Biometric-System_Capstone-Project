@@ -79,23 +79,57 @@ function RiskBadge({ risk }) {
 
 function TabSwitcher({ view, setView }) {
   const tabs = [
-    { id: "optimizer", label: "📊 Optimizer" },
-    { id: "holdings", label: "💼 My Holdings" },
+    { id: "optimizer", label: "Optimizer" },
+    { id: "holdings", label: "My Holdings" },
   ];
   return (
     <div style={{
-      display: "inline-flex", gap: 4, marginBottom: 20, padding: 4,
-      background: "var(--card)", border: "1px solid var(--card-border)",
-      borderRadius: 10,
+      display: "flex", gap: 30, marginBottom: 24,
+      borderBottom: "1px solid var(--card-border)",
     }}>
-      {tabs.map(t => (
-        <button key={t.id}
-          className={view === t.id ? "btn btn-primary" : "btn"}
-          style={{ padding: "7px 18px", fontSize: 14 }}
-          onClick={() => setView(t.id)}>
-          {t.label}
-        </button>
-      ))}
+      {tabs.map(t => {
+        const active = view === t.id;
+        return (
+          <button key={t.id}
+            onClick={() => setView(t.id)}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              padding: "10px 2px", fontSize: 17, fontWeight: 600,
+              color: active ? "var(--primary)" : "var(--text)",
+              borderBottom: active
+                ? "3px solid var(--primary)"
+                : "3px solid transparent",
+              marginBottom: -1, transition: "color .15s",
+            }}>
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Prev / Next pager for the two sub-pages of the Optimizer tab. Sits right
+// under the Optimizer / My Holdings tabs.
+function OptimizerPager({ page, setPage }) {
+  const PAGES = ["Optimizer & Analytics", "Specific Investment Picks"];
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10, marginBottom: 20,
+    }}>
+      <button className="btn" disabled={page === 0}
+        style={{ padding: "6px 14px", fontSize: 14 }}
+        onClick={() => setPage(p => Math.max(0, p - 1))}>
+        ← Previous
+      </button>
+      <button className="btn" disabled={page === PAGES.length - 1}
+        style={{ padding: "6px 14px", fontSize: 14 }}
+        onClick={() => setPage(p => Math.min(PAGES.length - 1, p + 1))}>
+        Next →
+      </button>
+      <span className="muted" style={{ fontSize: 13 }}>
+        Page {page + 1} of {PAGES.length} · {PAGES[page]}
+      </span>
     </div>
   );
 }
@@ -103,11 +137,13 @@ function TabSwitcher({ view, setView }) {
 export default function Portfolio() {
   const { isViewing } = useViewAs();
   const [view, setView] = useState("optimizer");
+  const [optimizerPage, setOptimizerPage] = useState(0);
   const [profile, setProfile] = useState({
     risk_appetite: "medium", investment_horizon_years: 5,
     monthly_savings: "", available_balance: "",
   });
   const [recommendation, setRecommendation] = useState(null);
+  const [previewAlloc, setPreviewAlloc] = useState(null);
   const [frontier, setFrontier] = useState([]);
   const [assetStats, setAssetStats] = useState(null);
   const [picks, setPicks] = useState(null);
@@ -153,6 +189,18 @@ export default function Portfolio() {
     loadPicks(profile.risk_appetite);
   }, [recommendation, profile.risk_appetite]);
 
+  // Live-preview the optimal allocation for the selected risk appetite so the
+  // pie chart / KPIs / picks reflect the dropdown without needing to re-save
+  // and re-generate. Only relevant once a recommendation exists (section shown).
+  useEffect(() => {
+    if (!recommendation) return;
+    let cancelled = false;
+    client.get(`/api/portfolio/allocation-preview?risk_appetite=${profile.risk_appetite}`)
+      .then(res => { if (!cancelled) setPreviewAlloc(res.data); })
+      .catch(() => { if (!cancelled) setPreviewAlloc(null); });
+    return () => { cancelled = true; };
+  }, [recommendation, profile.risk_appetite]);
+
   async function loadPicks(risk) {
     setPicksLoading(true);
     try {
@@ -185,9 +233,13 @@ export default function Portfolio() {
     } finally { setGenerating(false); }
   }
 
-  const pieData = recommendation
+  // The live allocation driving the pie / KPIs / picks: the preview for the
+  // currently-selected risk appetite, falling back to the saved recommendation.
+  const alloc = previewAlloc || recommendation;
+
+  const pieData = alloc
     ? Object.entries(ASSET_LABELS).map(([key, label]) => ({
-        name: label, value: recommendation[`${key}_pct`],
+        name: label, value: alloc[`${key}_pct`],
       })).filter(d => d.value > 0)
     : [];
 
@@ -207,6 +259,12 @@ export default function Portfolio() {
       {view === "holdings" && <HoldingsTab />}
 
       {view === "optimizer" && (
+      <>
+      {/* ── Prev / Next pager for the two optimizer sub-pages ───────────── */}
+      <OptimizerPager page={optimizerPage} setPage={setOptimizerPage} />
+
+      {/* ═══ PAGE 1 — Optimizer & Analytics ═════════════════════════════ */}
+      {optimizerPage === 0 && (
       <>
       {/* ── Investment Profile ──────────────────────────────────────────── */}
       <div className="card">
@@ -260,26 +318,26 @@ export default function Portfolio() {
       )}
 
       {/* ── Recommendation Output ───────────────────────────────────────── */}
-      {recommendation && (
+      {alloc && (
         <>
-          {/* Summary KPI cards */}
+          {/* Summary KPI cards — reflect the selected risk appetite live */}
           <div className="grid-3">
             <div className="card" style={{ textAlign: "center" }}>
               <p className="muted" style={{ margin: "0 0 4px" }}>Expected Annual Return</p>
               <div style={{ fontSize: 32, fontWeight: 700, color: "var(--primary)" }}>
-                {recommendation.expected_return}%
+                {alloc.expected_return}%
               </div>
             </div>
             <div className="card" style={{ textAlign: "center" }}>
               <p className="muted" style={{ margin: "0 0 4px" }}>Expected Risk (Volatility)</p>
               <div style={{ fontSize: 32, fontWeight: 700, color: "var(--accent)" }}>
-                {recommendation.expected_risk}%
+                {alloc.expected_risk}%
               </div>
             </div>
             <div className="card" style={{ textAlign: "center" }}>
               <p className="muted" style={{ margin: "0 0 4px" }}>Sharpe Ratio</p>
               <div style={{ fontSize: 32, fontWeight: 700, color: "var(--warning)" }}>
-                {recommendation.sharpe_ratio}
+                {alloc.sharpe_ratio}
               </div>
             </div>
           </div>
@@ -287,12 +345,14 @@ export default function Portfolio() {
           {/* Monte-Carlo Value-at-Risk on this allocation */}
           <VarCard refreshKey={recommendation} />
 
-          {/* Pie chart */}
+          {/* Pie chart — extra margin + labelLine so outer labels (e.g. Gold
+              at the top) never overlap the slices or the card title. */}
           <div className="card chart-card">
             <h2>Optimal Asset Allocation</h2>
-            <ResponsiveContainer width="100%" height={320}>
-              <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={120}
+            <ResponsiveContainer width="100%" height={360}>
+              <PieChart margin={{ top: 36, bottom: 24, left: 24, right: 24 }}>
+                <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={100}
+                  labelLine={{ stroke: "var(--muted)" }} minAngle={4}
                   label={({ name, value }) => `${name}: ${value}%`}>
                   {pieData.map((entry, i) => (
                     <Cell key={i} fill={ASSET_COLORS[entry.name] || "#7B8794"} />
@@ -306,21 +366,33 @@ export default function Portfolio() {
 
           {/* Exact units to buy from the live picks */}
           <InvestmentPlanCard refreshKey={recommendation} />
+        </>
+      )}
+      </>
+      )}
 
+      {/* ═══ PAGE 2 — Specific Investment Picks ═════════════════════════ */}
+      {optimizerPage === 1 && (
+        <>
           {/* ── Specific Investment Picks ────────────────────────────────── */}
           <h2 style={{ marginTop: 4 }}>
             Specific Investment Picks
             {picksLoading && <span className="muted" style={{ fontSize: 13, marginLeft: 10 }}>fetching live data…</span>}
           </h2>
+          <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
+            Concrete instruments for your{" "}
+            <strong>{profile.risk_appetite}</strong>-risk allocation. Generate a
+            recommendation on the previous page first.
+          </p>
 
-          {picks && (
+          {alloc && picks && (
             <>
               {/* ── EQUITY ─────────────────────────────────────────────── */}
-              {recommendation.equity_pct > 0 && picks.equity.length > 0 && (
+              {alloc.equity_pct > 0 && picks.equity.length > 0 && (
                 <div className="card">
                   <SectionHeader icon={SECTION_ICONS.equity}
                     title={`Equity — Top NSE Picks for ${profile.risk_appetite.charAt(0).toUpperCase() + profile.risk_appetite.slice(1)} Risk (Live)`}
-                    pct={recommendation.equity_pct} />
+                    pct={alloc.equity_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
                     Selected dynamically from live NSE data for your risk profile — low risk favours
                     stability, high risk favours momentum. Prices refresh every hour.
@@ -364,11 +436,11 @@ export default function Portfolio() {
               )}
 
               {/* ── MUTUAL FUNDS ────────────────────────────────────────── */}
-              {recommendation.mutual_funds_pct > 0 && picks.mutual_funds.length > 0 && (
+              {alloc.mutual_funds_pct > 0 && picks.mutual_funds.length > 0 && (
                 <div className="card">
                   <SectionHeader icon={SECTION_ICONS.mutual_funds}
                     title={`Mutual Funds — ${profile.risk_appetite.charAt(0).toUpperCase() + profile.risk_appetite.slice(1)}-Risk Picks`}
-                    pct={recommendation.mutual_funds_pct} />
+                    pct={alloc.mutual_funds_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
                     Live NAVs and trailing returns from AMFI data — past performance is not a guarantee.
                   </p>
@@ -411,11 +483,11 @@ export default function Portfolio() {
               )}
 
               {/* ── GOLD ────────────────────────────────────────────────── */}
-              {recommendation.gold_pct > 0 && picks.gold.length > 0 && (
+              {alloc.gold_pct > 0 && picks.gold.length > 0 && (
                 <div className="card">
                   <SectionHeader icon={SECTION_ICONS.gold}
                     title="Gold — ETFs &amp; Sovereign Gold Bonds (Live)"
-                    pct={recommendation.gold_pct} />
+                    pct={alloc.gold_pct} />
                   <div style={{ overflowX: "auto" }}>
                     <table className="table" style={{ minWidth: 640 }}>
                       <thead>
@@ -459,11 +531,11 @@ export default function Portfolio() {
               )}
 
               {/* ── DEBT ────────────────────────────────────────────────── */}
-              {recommendation.debt_pct > 0 && (
+              {alloc.debt_pct > 0 && (
                 <div className="card">
                   <SectionHeader icon={SECTION_ICONS.debt}
                     title="Debt — Exchange-Traded Fixed Income (Live)"
-                    pct={recommendation.debt_pct} />
+                    pct={alloc.debt_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
                     Gilt, PSU bond and liquid ETFs traded on the NSE — live prices and 1-year returns.
                   </p>
@@ -502,11 +574,11 @@ export default function Portfolio() {
               )}
 
               {/* ── FIXED DEPOSITS ───────────────────────────────────────── */}
-              {recommendation.fd_pct > 0 && (
+              {alloc.fd_pct > 0 && (
                 <div className="card">
                   <SectionHeader icon={SECTION_ICONS.fd}
                     title="Fixed Deposits — Best Bank Rates (Live)"
-                    pct={recommendation.fd_pct} />
+                    pct={alloc.fd_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
                     Live rate ranges across tenures, best offers first. Verify with the bank before investing. DICGC insured up to ₹5L per bank.
                   </p>
@@ -534,9 +606,10 @@ export default function Portfolio() {
               )}
             </>
           )}
-        </>
-      )}
 
+          {/* ── Analytics (moved here): Efficient Frontier, Asset Class
+                 Statistics & Asset Correlation Matrix — shown after the
+                 Specific Investment Picks ─────────────────────────────── */}
       {/* ── Efficient Frontier ────────────────────────────────────────────── */}
       {frontier.length > 0 && (
         <div className="card chart-card">
@@ -594,6 +667,8 @@ export default function Portfolio() {
 
       {/* ── Correlation heat map (same data source as the optimizer) ─────── */}
       <CorrelationMatrixCard assetStats={assetStats} />
+      </>
+      )}
       </>
       )}
 

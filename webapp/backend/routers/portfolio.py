@@ -79,6 +79,18 @@ def get_recommendation(user=Depends(get_effective_user),
     return result
 
 
+@router.get("/allocation-preview")
+def allocation_preview(risk_appetite: str = "medium",
+                       user=Depends(get_current_user)):
+    """Live optimal allocation for a given risk appetite, WITHOUT saving it.
+    Lets the UI preview how the asset mix shifts as the user changes their
+    risk appetite before committing to a recommendation."""
+    try:
+        return optimizer.optimize_portfolio(risk_appetite)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/efficient-frontier")
 def get_efficient_frontier(n_points: int = 20, user=Depends(get_current_user)):
     return optimizer.efficient_frontier(n_points)

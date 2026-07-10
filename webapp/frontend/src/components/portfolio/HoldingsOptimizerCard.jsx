@@ -10,12 +10,19 @@ const COLORS = [
   "#3498DB", "#FF6B6B", "#2ECC71", "#FFD93D", "#A8DADC",
 ];
 
-// Same tinting rules as the asset-class correlation card.
+const HIGH_CORR = 0.75;
+
+// Continuous diverging heatmap tint — identical to the Asset Correlation
+// Matrix card: positive correlations shade red (move together /
+// concentration), negative shade green (hedge), intensity scales with the
+// magnitude so every cell is coloured.
 function cellColor(v) {
-  if (v >= 0.75) return "rgba(255, 84, 112, 0.35)";
-  if (v >= 0.4) return "rgba(245, 166, 35, 0.25)";
-  if (v <= -0.2) return "rgba(0, 212, 170, 0.30)";
-  return "transparent";
+  if (v == null) return "transparent";
+  const mag = Math.min(Math.abs(v), 1);
+  const alpha = 0.08 + 0.72 * mag;
+  return v >= 0
+    ? `rgba(233, 69, 96, ${alpha.toFixed(3)})`   // red
+    : `rgba(0, 212, 170, ${alpha.toFixed(3)})`;  // green
 }
 
 function short(ticker) { return ticker.replace(".NS", ""); }
@@ -81,6 +88,17 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
     .filter((a) => a.target_weight_pct > 0)
     .map((a) => ({ name: short(a.ticker), value: a.target_weight_pct }));
   const corr = data.correlation;
+
+  // Highly correlated (non-diagonal) pairs, for the concentration-risk note.
+  const highPairs = [];
+  for (let i = 0; i < corr.tickers.length; i++) {
+    for (let j = i + 1; j < corr.tickers.length; j++) {
+      const v = corr.matrix[i][j];
+      if (v != null && v >= HIGH_CORR) {
+        highPairs.push({ a: short(corr.tickers[i]), b: short(corr.tickers[j]), v });
+      }
+    }
+  }
 
   return (
     <>
@@ -225,32 +243,47 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
       <div className="card">
         <h2>Holdings Correlation Matrix</h2>
         <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
-          From the same stored price history the optimizer uses. Red pairs
-          move together (concentration); green pairs hedge each other.
+          Highly correlated holdings (red) move together and dilute
+          diversification; negative pairs (green) hedge each other. From the
+          same stored price history the optimizer uses.
         </p>
         <div style={{ overflowX: "auto" }}>
-          <table className="table" style={{ minWidth: 420, textAlign: "center" }}>
+          <table style={{
+            minWidth: 420, borderCollapse: "separate", borderSpacing: 3,
+            textAlign: "center", margin: "8px auto 4px",
+          }}>
             <thead>
               <tr>
                 <th></th>
                 {corr.tickers.map((t) => (
-                  <th key={t} style={{ textAlign: "center" }}>{short(t)}</th>
+                  <th key={t} style={{
+                    padding: "6px 8px", fontSize: 12, fontWeight: 600,
+                    color: "var(--muted)", textTransform: "uppercase",
+                    letterSpacing: 0.4,
+                  }}>{short(t)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {corr.tickers.map((a, i) => (
                 <tr key={a}>
-                  <td><strong>{short(a)}</strong></td>
+                  <td style={{
+                    padding: "6px 10px", fontSize: 12, fontWeight: 600,
+                    textAlign: "right", color: "var(--muted)",
+                    textTransform: "uppercase", letterSpacing: 0.4,
+                  }}>{short(a)}</td>
                   {corr.tickers.map((b, j) => {
                     const v = corr.matrix[i][j];
+                    const diag = i === j;
                     return (
                       <td key={b} style={{
-                        background: i === j ? "transparent" : cellColor(v),
-                        color: i === j ? "var(--muted)" : "var(--text)",
+                        width: 56, height: 44, borderRadius: 6,
+                        background: diag ? "var(--card-border)" : cellColor(v),
+                        color: diag ? "var(--muted)" : "var(--text)",
                         fontFamily: "var(--mono)", fontSize: 13,
+                        fontWeight: diag ? 400 : 600, textAlign: "center",
                       }}>
-                        {v.toFixed(2)}
+                        {v != null ? v.toFixed(2) : "—"}
                       </td>
                     );
                   })}
@@ -259,6 +292,13 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
             </tbody>
           </table>
         </div>
+        {highPairs.length > 0 && (
+          <p style={{ fontSize: 13, marginBottom: 0 }}>
+            ⚠️ <strong>Concentration risk:</strong>{" "}
+            {highPairs.map(p => `${p.a} & ${p.b} (${p.v.toFixed(2)})`).join(", ")} move
+            almost in lockstep — treat them as one risk bucket.
+          </p>
+        )}
       </div>
     </>
   );

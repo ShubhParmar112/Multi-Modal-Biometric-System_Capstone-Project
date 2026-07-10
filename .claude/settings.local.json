@@ -67,7 +67,10 @@
       "Bash(ls data *)",
       "Bash(./venv/Scripts/python.exe -m tests.test_ticker_search)",
       "Bash(./venv/Scripts/python.exe -m py_compile scripts/build_universe.py scripts/nightly_prices.py tests/test_ticker_search.py portfolio/holdings_service.py portfolio/yf_worker.py database/db_manager.py webapp/backend/routers/portfolio.py)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:5173/src/pages/Transactions.jsx\")"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:5173/src/pages/Transactions.jsx\")",
+      "Bash(node node_modules/oxlint/bin/oxlint src/pages/Portfolio.jsx src/components/portfolio/HoldingsOptimizerCard.jsx)",
+      "Bash(cat webapp/frontend/.env)",
+      "Bash(venv/Scripts/python.exe -c ' *)"
     ]
   }
 }
