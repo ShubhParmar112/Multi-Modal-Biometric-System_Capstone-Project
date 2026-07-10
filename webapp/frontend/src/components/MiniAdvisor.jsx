@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAdvisor } from "../context/AdvisorContext";
 
@@ -24,7 +25,7 @@ export default function MiniAdvisor() {
   }
 
   if (!open) {
-    return (
+    return createPortal(
       <button
         onClick={() => setOpen(true)}
         title="AI Advisor"
@@ -36,11 +37,12 @@ export default function MiniAdvisor() {
         }}
       >
         🤖
-      </button>
+      </button>,
+      document.body
     );
   }
 
-  return (
+  return createPortal(
     <div style={{
       position: "fixed", bottom: 24, right: 24, zIndex: 60,
       width: 340, height: 440, display: "flex", flexDirection: "column",
@@ -125,6 +127,7 @@ export default function MiniAdvisor() {
           ➤
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

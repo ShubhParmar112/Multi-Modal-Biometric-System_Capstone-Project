@@ -284,7 +284,7 @@ export default function Portfolio() {
     : [];
 
   return (
-    <div className="page" style={{ maxWidth: 1100 }}>
+    <div className="page has-advisor" style={{ maxWidth: 1100 }}>
       <h1>Investment Portfolio</h1>
       <TabSwitcher view={view} setView={setView} />
 

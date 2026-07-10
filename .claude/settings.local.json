@@ -71,7 +71,8 @@
       "Bash(node node_modules/oxlint/bin/oxlint src/pages/Portfolio.jsx src/components/portfolio/HoldingsOptimizerCard.jsx)",
       "Bash(cat webapp/frontend/.env)",
       "Bash(venv/Scripts/python.exe -c ' *)",
-      "Bash(node node_modules/oxlint/bin/oxlint src/pages/Portfolio.jsx)"
+      "Bash(node node_modules/oxlint/bin/oxlint src/pages/Portfolio.jsx)",
+      "Bash(node node_modules/oxlint/bin/oxlint src/components/MiniAdvisor.jsx src/pages/Portfolio.jsx)"
     ]
   }
 }

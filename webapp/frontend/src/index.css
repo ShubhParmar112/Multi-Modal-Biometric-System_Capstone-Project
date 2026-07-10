@@ -777,6 +777,12 @@ select.input {
 
 /* ── Optimizer page pager (PREV · label · NEXT) ─────── */
 
+/* Pages with the docked AI advisor reserve bottom space so the last row
+   (e.g. the bottom pager) never sits under the floating advisor button. */
+.has-advisor {
+  padding-bottom: 104px;
+}
+
 .pager {
   display: flex;
   align-items: center;
