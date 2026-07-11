@@ -72,7 +72,15 @@
       "Bash(cat webapp/frontend/.env)",
       "Bash(venv/Scripts/python.exe -c ' *)",
       "Bash(node node_modules/oxlint/bin/oxlint src/pages/Portfolio.jsx)",
-      "Bash(node node_modules/oxlint/bin/oxlint src/components/MiniAdvisor.jsx src/pages/Portfolio.jsx)"
+      "Bash(node node_modules/oxlint/bin/oxlint src/components/MiniAdvisor.jsx src/pages/Portfolio.jsx)",
+      "Bash(grep -rn \"currency\\\\|CURRENCY\\\\|₹\\\\|balance_after\\\\|'\\\\\\\\$'\\\\|\\\\\"\\\\\\\\$\\\\\"\" config.py database/db_manager.py utils/email_service.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('ui/banking_interface.py'\\).read\\(\\)\\); ast.parse\\(open\\('ui/atm_interface.py'\\).read\\(\\)\\); print\\('OK: both files parse'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('ui/banking_interface.py', encoding='utf-8'\\).read\\(\\)\\); ast.parse\\(open\\('ui/atm_interface.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK: both files parse'\\)\")",
+      "Bash(python -c \"import sys; sys.stdout.reconfigure\\(encoding='utf-8'\\); import ui.banking_interface as b; print\\('import OK:', b.BankingInterface.__name__\\)\")",
+      "Bash(./venv/Scripts/python.exe -c \"import sys; sys.stdout.reconfigure\\(encoding='utf-8'\\); import ui.banking_interface as b; print\\('import OK:', b.BankingInterface.__name__\\)\")",
+      "Bash(./venv/Scripts/python.exe -c \"import sys; sys.stdout.reconfigure\\(encoding='utf-8'\\); import ui.banking_interface as b; print\\('import OK'\\); print\\('methods:', [m for m in dir\\(b.BankingInterface\\) if not m.startswith\\('__'\\)][:12]\\)\")",
+      "Bash(./venv/Scripts/python.exe -c \"import sys; sys.stdout.reconfigure\\(encoding='utf-8'\\); from database.db_manager import DatabaseManager; db=DatabaseManager\\(\\); us=db.get_all_users\\(\\); print\\([\\(u['user_id'], u['name']\\) for u in us][:5]\\)\")",
+      "Bash(./venv/Scripts/python.exe \"C:/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/8033c5ef-713a-4225-91c8-9a7f460f3b29/scratchpad/bank_smoke.py\")"
     ]
   }
 }

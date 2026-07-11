@@ -109,8 +109,8 @@ function RiskBadge({ risk }) {
 
 function TabSwitcher({ view, setView }) {
   const tabs = [
-    { id: "optimizer", label: "Optimizer" },
     { id: "holdings", label: "My Holdings" },
+    { id: "optimizer", label: "Optimizer" },
   ];
   return (
     <div style={{
@@ -168,7 +168,7 @@ function OptimizerPager({ page, setPage, edge = "top" }) {
 
 export default function Portfolio() {
   const { isViewing } = useViewAs();
-  const [view, setView] = useState("optimizer");
+  const [view, setView] = useState("holdings");
   const [optimizerPage, setOptimizerPage] = useState(0);
   const [profile, setProfile] = useState({
     risk_appetite: "medium", investment_horizon_years: 5,

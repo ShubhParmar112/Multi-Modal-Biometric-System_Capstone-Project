@@ -221,41 +221,44 @@ class ATMInterface:
             right_panel, text="🔐 Authentication Pipeline",
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=14, weight="bold"),
             text_color=config.TEXT_COLOR
-        ).pack(padx=15, pady=(15, 8))
+        ).pack(padx=15, pady=(10, 6))
 
         # Separator
         ctk.CTkFrame(
             right_panel, height=1, fg_color="#2A3A5C"
-        ).pack(fill="x", padx=15, pady=5)
+        ).pack(fill="x", padx=15, pady=(0, 4))
 
-        # Pipeline steps
-        self.step_cards = {}
-        steps = [
-            ("card", "1", "Insert Card", "Enter your card number"),
-            ("face", "2", "Face Recognition", "Identify user via webcam"),
-            ("liveness", "3", "Liveness Detection", "Anti-spoofing check"),
-            ("fingerprint", "4", "Fingerprint Scan",
-             "Verify via image scan" if config.SOFTWARE_FINGERPRINT else "Verify via R307S sensor"),
-            ("fusion", "5", "Identity Fusion", "Cross-match biometrics"),
-            ("card_verify", "6", "Verify Card Owner", "Match identity to card"),
-            ("pin", "7", "PIN Verification", "Enter 4-digit PIN code"),
-        ]
+        # ── Bottom group ─────────────────────────────────
+        # Packed BEFORE the step cards so the buttons + result box are pinned
+        # to the bottom of the panel and can never be pushed off-screen, no
+        # matter how much vertical space the pipeline cards take.
+        btn_frame = ctk.CTkFrame(right_panel, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=15, pady=(6, 10), side="bottom")
 
-        for key, num, title, desc in steps:
-            card = self._create_step_card(right_panel, num, title, desc)
-            self.step_cards[key] = card
+        self.start_btn = ctk.CTkButton(
+            btn_frame, text="▶  Start Authentication",
+            font=ctk.CTkFont(family=config.FONT_FAMILY, size=15, weight="bold"),
+            fg_color=config.PRIMARY_COLOR, text_color="#0D1B2A",
+            hover_color="#00B894", height=54, corner_radius=8,
+            command=self._start_auth
+        )
+        self.start_btn.pack(fill="x", pady=(0, 6))
 
-        # Separator
-        ctk.CTkFrame(
-            right_panel, height=1, fg_color="#2A3A5C"
-        ).pack(fill="x", padx=15, pady=8)
+        self.reset_btn = ctk.CTkButton(
+            btn_frame, text="↻  Reset",
+            font=ctk.CTkFont(family=config.FONT_FAMILY, size=12),
+            fg_color="#2A3A5C", text_color=config.TEXT_COLOR,
+            hover_color="#3A4A6C", height=34, corner_radius=8,
+            command=self._reset
+        )
+        self.reset_btn.pack(fill="x")
 
-        # Result display
+        # Result display (pinned just above the buttons)
         self.result_frame = ctk.CTkFrame(
             right_panel, fg_color="#0A0F1A",
-            corner_radius=8, height=60
+            corner_radius=8, height=56
         )
-        self.result_frame.pack(fill="x", padx=15, pady=5)
+        self.result_frame.pack(fill="x", padx=15, pady=(4, 6), side="bottom")
         self.result_frame.pack_propagate(False)
 
         self.result_icon = ctk.CTkLabel(
@@ -274,7 +277,7 @@ class ATMInterface:
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=13, weight="bold"),
             text_color=config.TEXT_COLOR, anchor="w"
         )
-        self.result_title.pack(fill="x", pady=(10, 0))
+        self.result_title.pack(fill="x", pady=(8, 0))
 
         self.result_detail = ctk.CTkLabel(
             result_text_frame, text="Press 'Start' to begin",
@@ -283,35 +286,43 @@ class ATMInterface:
         )
         self.result_detail.pack(fill="x")
 
-        # ── Buttons ──────────────────────────────────────
-        btn_frame = ctk.CTkFrame(right_panel, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=15, pady=(8, 12), side="bottom")
+        # Separator above the result box
+        ctk.CTkFrame(
+            right_panel, height=1, fg_color="#2A3A5C"
+        ).pack(fill="x", padx=15, pady=(4, 0), side="bottom")
 
-        self.start_btn = ctk.CTkButton(
-            btn_frame, text="▶  Start Authentication",
-            font=ctk.CTkFont(family=config.FONT_FAMILY, size=13, weight="bold"),
-            fg_color=config.PRIMARY_COLOR, text_color="#0D1B2A",
-            hover_color="#00B894", height=40, corner_radius=8,
-            command=self._start_auth
+        # ── Pipeline steps ───────────────────────────────
+        # Scrollable so every card renders at its full size (the last card is
+        # no longer clipped); fills the space between the header and the
+        # pinned bottom group.
+        steps_frame = ctk.CTkScrollableFrame(
+            right_panel, fg_color="transparent"
         )
-        self.start_btn.pack(fill="x", pady=(0, 6))
+        steps_frame.pack(fill="both", expand=True, padx=4, pady=0)
 
-        self.reset_btn = ctk.CTkButton(
-            btn_frame, text="↻  Reset",
-            font=ctk.CTkFont(family=config.FONT_FAMILY, size=12),
-            fg_color="#2A3A5C", text_color=config.TEXT_COLOR,
-            hover_color="#3A4A6C", height=35, corner_radius=8,
-            command=self._reset
-        )
-        self.reset_btn.pack(fill="x")
+        self.step_cards = {}
+        steps = [
+            ("card", "1", "Insert Card", "Enter your card number"),
+            ("face", "2", "Face Recognition", "Identify user via webcam"),
+            ("liveness", "3", "Liveness Detection", "Anti-spoofing check"),
+            ("fingerprint", "4", "Fingerprint Scan",
+             "Verify via image scan" if config.SOFTWARE_FINGERPRINT else "Verify via R307S sensor"),
+            ("fusion", "5", "Identity Fusion", "Cross-match biometrics"),
+            ("card_verify", "6", "Verify Card Owner", "Match identity to card"),
+            ("pin", "7", "PIN Verification", "Enter 4-digit PIN code"),
+        ]
+
+        for key, num, title, desc in steps:
+            card = self._create_step_card(steps_frame, num, title, desc)
+            self.step_cards[key] = card
 
     def _create_step_card(self, parent, number: str, title: str,
                           description: str) -> dict:
         """Create a pipeline step card with status indicator."""
         frame = ctk.CTkFrame(
-            parent, fg_color="#0D1B2A", corner_radius=6, height=42
+            parent, fg_color="#0D1B2A", corner_radius=6, height=44
         )
-        frame.pack(fill="x", padx=15, pady=3)
+        frame.pack(fill="x", padx=15, pady=2)
         frame.pack_propagate(False)
 
         # Step number circle
@@ -323,23 +334,25 @@ class ATMInterface:
         )
         num_label.pack(side="left", padx=(10, 8), pady=8)
 
-        # Text
+        # Text — both lines are vertically centered inside the card (the two
+        # labels split the card height via expand), so the title and its
+        # description stay clear of the top and bottom edges.
         text_frame = ctk.CTkFrame(frame, fg_color="transparent")
         text_frame.pack(side="left", fill="both", expand=True)
 
         title_label = ctk.CTkLabel(
             text_frame, text=title,
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=12, weight="bold"),
-            text_color="#8899AA", anchor="w"
+            text_color="#8899AA", anchor="sw"
         )
-        title_label.pack(fill="x", pady=(6, 0))
+        title_label.pack(fill="both", expand=True)
 
         desc_label = ctk.CTkLabel(
             text_frame, text=description,
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=9),
-            text_color="#556677", anchor="w"
+            text_color="#556677", anchor="nw"
         )
-        desc_label.pack(fill="x")
+        desc_label.pack(fill="both", expand=True)
 
         # Status icon
         status_label = ctk.CTkLabel(
@@ -771,12 +784,17 @@ class ATMInterface:
             duration = time.time() - start_time
             self._show_result(
                 "granted", f"Welcome, {user_name}!",
-                f"Authenticated in {duration:.1f}s — manage your account on "
-                f"the SmartBank web portal."
+                f"Authenticated in {duration:.1f}s"
             )
             self.db.update_last_login(face_id)
             self.db.log_auth_event(face_id, "session", "granted",
                                    f"duration={duration:.1f}s")
+
+            # Open the banking dashboard shortly after the welcome shows.
+            self.root.after(
+                1200,
+                lambda uid=face_id: self._open_banking(uid)
+            )
 
         except Exception as e:
             logger.error(f"Auth pipeline error: {e}")
@@ -791,6 +809,12 @@ class ATMInterface:
         self.root.after(0, lambda: self.start_btn.configure(
             state="normal", text="▶  Start Authentication"
         ))
+
+    def _open_banking(self, user_id: str):
+        """Launch the post-authentication banking dashboard."""
+        # Imported lazily to avoid a circular import at module load time.
+        from ui.banking_interface import BankingInterface
+        BankingInterface(self.root, self.db, user_id, on_exit=self._reset)
 
     # ═══════════════════════════════════════════════════════════
     # CARD ENTRY DIALOG

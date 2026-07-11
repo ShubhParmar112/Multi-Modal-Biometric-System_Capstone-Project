@@ -826,12 +826,12 @@ select.input {
 /* ── Smooth fade when switching tabs / optimizer sub-pages ─── */
 
 @keyframes tabFadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .tab-pane {
-  animation: tabFadeIn 0.35s ease both;
+  animation: tabFadeIn 0.3s ease both;
 }
 
 @media (prefers-reduced-motion: reduce) {

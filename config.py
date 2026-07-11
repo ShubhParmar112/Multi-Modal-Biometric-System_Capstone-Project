@@ -162,7 +162,7 @@ PORTFOLIO_PICKS_TIMEOUT = 30          # Seconds for the live ticker quote batch
 # ============================================================
 WINDOW_TITLE = "SecureATM - Biometric Authentication"
 WINDOW_WIDTH = 1200
-WINDOW_HEIGHT = 750
+WINDOW_HEIGHT = 800
 THEME_MODE = "dark"                   # "dark" or "light"
 PRIMARY_COLOR = "#00D4AA"             # Teal accent
 SECONDARY_COLOR = "#1A1A2E"           # Dark background
