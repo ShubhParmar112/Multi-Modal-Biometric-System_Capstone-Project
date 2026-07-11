@@ -121,6 +121,41 @@ def _draw_icon(name: str, color: str, px: int = 52) -> Image.Image:
         stroke([(34, 12), (16, 12), (16, 52), (34, 52)])
         stroke([(26, 32), (50, 32)])
         stroke([(42, 24), (52, 32), (42, 40)])
+    elif name == "enroll":                       # person + plus
+        d.ellipse([20 * ss, 13 * ss, 34 * ss, 27 * ss],
+                  outline=color, width=w)
+        d.arc([13 * ss, 33 * ss, 41 * ss, 61 * ss], start=180, end=360,
+              fill=color, width=w)
+        stroke([(48, 20), (48, 34)])
+        stroke([(41, 27), (55, 27)])
+    elif name == "encode":                       # face inside scan frame
+        stroke([(22, 13), (14, 13), (14, 21)])
+        stroke([(42, 13), (50, 13), (50, 21)])
+        stroke([(50, 43), (50, 51), (42, 51)])
+        stroke([(22, 51), (14, 51), (14, 43)])
+        d.ellipse([26 * ss, 21 * ss, 38 * ss, 33 * ss],
+                  outline=color, width=w)
+        d.arc([22 * ss, 33 * ss, 42 * ss, 49 * ss], start=180, end=360,
+              fill=color, width=w)
+    elif name == "users":                        # two people
+        d.ellipse([17 * ss, 14 * ss, 31 * ss, 28 * ss],
+                  outline=color, width=w)
+        d.arc([10 * ss, 34 * ss, 38 * ss, 62 * ss], start=180, end=360,
+              fill=color, width=w)
+        d.arc([36 * ss, 17 * ss, 50 * ss, 31 * ss], start=270, end=90,
+              fill=color, width=w)
+        d.arc([36 * ss, 36 * ss, 58 * ss, 58 * ss], start=245, end=360,
+              fill=color, width=w)
+    elif name == "selftest":                     # shield + check
+        stroke([(32, 11), (49, 17), (47, 36), (32, 53),
+                (17, 36), (15, 17), (32, 11)])
+        stroke([(24, 31), (30, 38), (41, 24)])
+    elif name == "ports":                        # power plug + cable
+        stroke([(25, 11), (25, 21)])
+        stroke([(39, 11), (39, 21)])
+        rrect((19, 21, 45, 38), 5)
+        stroke([(32, 38), (32, 46)])
+        stroke([(32, 46), (28, 52)])
 
     return img.resize((px, px), Image.LANCZOS)
 

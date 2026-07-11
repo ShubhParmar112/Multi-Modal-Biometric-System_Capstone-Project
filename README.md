@@ -161,6 +161,8 @@ python main.py --list-users        → List registered users
 python main.py --list-ports        → List serial ports
 python main.py --test              → System self-test
 python main.py --port COM5         → Override serial port
+python main.py --banker            → Launch the banker console (staff UI
+                                     for enrollment, diagnostics & maintenance)
 ```
 
 ---

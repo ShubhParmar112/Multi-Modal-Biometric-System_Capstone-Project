@@ -11,6 +11,7 @@ Usage:
     python main.py --simulate       → Run in simulation mode (no hardware)
     python main.py --test           → Run system self-test
     python main.py --bank USR001    → Open banking menu for a user
+    python main.py --banker         → Launch the banker console (staff UI)
     python main.py --train-fraud-model → Train/select the fraud detection model
     python main.py --fraud-logs     → Show recent fraud log entries
     python main.py --analytics USR001 → Show monthly report + save charts
@@ -604,6 +605,7 @@ Examples:
   python main.py --list-ports     Show serial ports
   python main.py --test           Run system self-test
   python main.py --bank USR001    Open banking menu for a user
+  python main.py --banker         Launch the banker console (staff UI)
   python main.py --train-fraud-model  Train/select the fraud model
   python main.py --fraud-logs     Show recent fraud log entries
   python main.py --analytics USR001  Show monthly report + save charts
@@ -626,6 +628,8 @@ Examples:
                         help="Override serial port (e.g., COM4)")
     parser.add_argument("--bank", type=str, metavar="USER_ID",
                         help="Open the PIN-gated CLI banking menu for a user")
+    parser.add_argument("--banker", action="store_true",
+                        help="Launch the banker console (staff operations UI)")
     parser.add_argument("--train-fraud-model", action="store_true",
                         help="Train Isolation Forest/LOF/XGBoost and keep the best by F1")
     parser.add_argument("--fraud-logs", action="store_true",
@@ -663,6 +667,10 @@ Examples:
         run_self_test()
     elif args.bank:
         bank_menu(args.bank)
+    elif args.banker:
+        logger.system_event("Main", "Launching Banker Console")
+        from ui.banker_interface import BankerInterface
+        BankerInterface().run()
     elif args.train_fraud_model:
         train_fraud_model()
     elif args.fraud_logs:
