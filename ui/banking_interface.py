@@ -17,6 +17,7 @@ import datetime
 from typing import Callable, Optional
 
 import customtkinter as ctk
+from PIL import Image, ImageDraw
 
 import config
 from banking.account_manager import BankingService
@@ -25,7 +26,8 @@ from utils.logger import logger
 
 # ── Palette (derived from config, kept consistent with the auth screen) ──
 BG        = config.SECONDARY_COLOR      # page background      #1A1A2E
-CARD      = config.CARD_COLOR           # tiles / panels       #16213E
+CARD      = "#152036"                   # tile / panel surface (refined)
+CARD_HV   = "#1B2947"                   # tile hover surface
 ACCENT    = config.PRIMARY_COLOR        # teal                 #00D4AA
 ACCENT_HV = "#00B894"                   # teal hover
 DANGER    = config.ACCENT_COLOR         # red                  #E94560
@@ -33,13 +35,94 @@ TEXT      = config.TEXT_COLOR           # #EAEAEA
 MUTED     = "#8A97AC"                   # secondary text
 HEADER_BG = "#0D1526"                   # header / footer bar
 PANEL_DK  = "#0A0F1A"                   # inset fields
-BORDER    = "#263450"                   # subtle borders
-BADGE_DK  = "#0D1B2A"
+BORDER    = "#243149"                   # subtle borders
+PANEL_CARD = "#16213E"                  # overlay panel surface
+
+# Per-action accent colours — a restrained, cohesive fintech palette that
+# colour-codes each transaction instead of two flat teal blocks.
+COL_WITHDRAW  = "#00D4AA"   # teal
+COL_DEPOSIT   = "#34D399"   # emerald
+COL_TRANSFER  = "#5B8DEF"   # blue
+COL_STATEMENT = "#A78BFA"   # violet
+COL_PIN       = "#F5A623"   # amber
+COL_EXIT      = "#E94560"   # red
 
 
 def _fmt(amount: float) -> str:
     """Format a rupee amount the same way the e-mail alerts do."""
     return f"₹{amount:,.2f}"
+
+
+def _blend(base_hex: str, mix_hex: str, t: float) -> str:
+    """Blend two hex colours; `t` is the fraction of `mix_hex`."""
+    a = base_hex.lstrip("#")
+    b = mix_hex.lstrip("#")
+    ar, ag, ab = int(a[0:2], 16), int(a[2:4], 16), int(a[4:6], 16)
+    br, bg, bb = int(b[0:2], 16), int(b[2:4], 16), int(b[4:6], 16)
+    r = round(ar + (br - ar) * t)
+    g = round(ag + (bg - ag) * t)
+    c = round(ab + (bb - ab) * t)
+    return f"#{r:02X}{g:02X}{c:02X}"
+
+
+def _draw_icon(name: str, color: str, px: int = 52) -> Image.Image:
+    """
+    Render a crisp, anti-aliased line icon as an RGBA image.
+
+    Icons are drawn on a 64-unit grid at 4x supersampling then downscaled, so
+    strokes get clean rounded caps and smooth edges — no emoji, no bitmap fuzz.
+    """
+    ss = 4
+    S = 64 * ss
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    w = int(5.0 * ss)
+    r = w // 2
+
+    def sc(pts):
+        return [(x * ss, y * ss) for (x, y) in pts]
+
+    def stroke(pts):
+        p = sc(pts)
+        d.line(p, fill=color, width=w, joint="curve")
+        for (x, y) in p:                       # rounded caps/joins
+            d.ellipse((x - r, y - r, x + r, y + r), fill=color)
+
+    def rrect(box, radius):
+        x0, y0, x1, y1 = [v * ss for v in box]
+        d.rounded_rectangle((x0, y0, x1, y1), radius=radius * ss,
+                            outline=color, width=w)
+
+    if name == "deposit":                       # up arrow onto a tray
+        stroke([(14, 50), (50, 50)])
+        stroke([(32, 46), (32, 16)])
+        stroke([(21, 27), (32, 16), (43, 27)])
+    elif name == "withdraw":                     # down arrow onto a tray
+        stroke([(14, 50), (50, 50)])
+        stroke([(32, 14), (32, 40)])
+        stroke([(21, 29), (32, 40), (43, 29)])
+    elif name == "transfer":                     # two opposing arrows
+        stroke([(15, 25), (46, 25)])
+        stroke([(39, 18), (47, 25), (39, 32)])
+        stroke([(49, 41), (18, 41)])
+        stroke([(25, 34), (17, 41), (25, 48)])
+    elif name == "statement":                    # document with lines
+        rrect((19, 10, 45, 54), 5)
+        stroke([(26, 22), (38, 22)])
+        stroke([(26, 30), (38, 30)])
+        stroke([(26, 38), (34, 38)])
+    elif name == "pin":                          # padlock
+        rrect((18, 29, 46, 53), 5)
+        d.arc([24 * ss, 15 * ss, 40 * ss, 37 * ss], start=180, end=360,
+              fill=color, width=w)
+        d.ellipse([(32 - 2.6) * ss, (39 - 2.6) * ss,
+                   (32 + 2.6) * ss, (39 + 2.6) * ss], fill=color)
+    elif name == "exit":                         # door + outward arrow
+        stroke([(34, 12), (16, 12), (16, 52), (34, 52)])
+        stroke([(26, 32), (50, 32)])
+        stroke([(42, 24), (52, 32), (42, 40)])
+
+    return img.resize((px, px), Image.LANCZOS)
 
 
 class BankingInterface:
@@ -64,6 +147,7 @@ class BankingInterface:
         self.on_exit = on_exit
         self._toast_job = None
         self._overlay = None
+        self._icon_cache = {}   # keeps CTkImage refs alive + avoids redraws
 
         account = self._account()
         self.account_number = account["account_number"] if account else "—"
@@ -94,24 +178,42 @@ class BankingInterface:
         header.pack(fill="x")
         header.pack_propagate(False)
 
-        # Left: greeting
+        # Left: avatar + greeting
         left = ctk.CTkFrame(header, fg_color="transparent")
         left.pack(side="left", padx=36, pady=20)
+
+        name = self.user.get("name") or "Customer"
+        parts = name.split()
+        initials = (parts[0][0] + (parts[1][0] if len(parts) > 1 else "")).upper()
+
+        avatar = ctk.CTkFrame(left, width=58, height=58, corner_radius=29,
+                              fg_color=_blend(HEADER_BG, ACCENT, 0.22),
+                              border_width=1, border_color=_blend(HEADER_BG, ACCENT, 0.5))
+        avatar.pack(side="left", padx=(0, 16))
+        avatar.pack_propagate(False)
+        ctk.CTkLabel(
+            avatar, text=initials, fg_color="transparent",
+            font=ctk.CTkFont(family=config.FONT_FAMILY, size=20, weight="bold"),
+            text_color=ACCENT
+        ).pack(expand=True)
+
+        text_col = ctk.CTkFrame(left, fg_color="transparent")
+        text_col.pack(side="left")
 
         hour = datetime.datetime.now().hour
         greeting = ("Good Morning" if hour < 12
                     else "Good Afternoon" if hour < 17
                     else "Good Evening")
-        first_name = self.user["name"].split()[0] if self.user.get("name") else ""
+        first_name = parts[0] if parts else ""
 
         ctk.CTkLabel(
-            left, text=f"{greeting}, {first_name}",
-            font=ctk.CTkFont(family=config.FONT_FAMILY, size=30, weight="bold"),
+            text_col, text=f"{greeting}, {first_name}",
+            font=ctk.CTkFont(family=config.FONT_FAMILY, size=28, weight="bold"),
             text_color=TEXT, anchor="w"
         ).pack(anchor="w")
 
         ctk.CTkLabel(
-            left, text="Please select a transaction",
+            text_col, text="Please select a transaction",
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=13),
             text_color=MUTED, anchor="w"
         ).pack(anchor="w", pady=(2, 0))
@@ -159,80 +261,95 @@ class BankingInterface:
         for r in range(2):
             wrap.grid_rowconfigure(r, weight=1, uniform="row")
 
-        # (icon, title, subtitle, command, style)
+        # (icon, title, subtitle, command, accent colour)
         tiles = [
-            ("\U0001F4B5", "Withdraw", "Cash withdrawal", self._do_withdraw, "accent"),
-            ("\U0001F4B0", "Deposit", "Add money to account", self._do_deposit, "accent"),
-            ("\U0001F501", "Transfer", "Send to another account", self._do_transfer, "normal"),
-            ("\U0001F9FE", "Mini Statement", "Recent transactions", self._do_statement, "normal"),
-            ("\U0001F512", "PIN Change", "Update your 4-digit PIN", self._do_pin_change, "normal"),
-            ("\U0001F6AA", "Exit", "End session / take card", self._do_exit, "danger"),
+            ("withdraw", "Withdraw", "Cash withdrawal", self._do_withdraw, COL_WITHDRAW),
+            ("deposit", "Deposit", "Add money to account", self._do_deposit, COL_DEPOSIT),
+            ("transfer", "Transfer", "Send to another account", self._do_transfer, COL_TRANSFER),
+            ("statement", "Mini Statement", "Recent transactions", self._do_statement, COL_STATEMENT),
+            ("pin", "PIN Change", "Update your 4-digit PIN", self._do_pin_change, COL_PIN),
+            ("exit", "Exit", "End session / take card", self._do_exit, COL_EXIT),
         ]
 
-        for idx, (icon, title, subtitle, command, style) in enumerate(tiles):
+        for idx, (icon, title, subtitle, command, color) in enumerate(tiles):
             row, col = divmod(idx, 3)
-            tile = self._make_tile(wrap, icon, title, subtitle, command, style)
+            tile = self._make_tile(wrap, icon, title, subtitle, command, color)
             tile.grid(row=row, column=col, sticky="nsew", padx=12, pady=12)
 
-    def _make_tile(self, parent, icon, title, subtitle, command, style):
-        """Create one clickable transaction tile with an icon badge + hover."""
-        if style == "accent":
-            base, hover = ACCENT, ACCENT_HV
-            border, border_hv = ACCENT, "#5FF0D4"
-            title_color = "#08251E"
-            sub_color = "#0C3A30"
-            badge_bg = "#12E0BC"
-        elif style == "danger":
-            base, hover = CARD, "#20182A"
-            border, border_hv = DANGER, "#FF6B85"
-            title_color = DANGER
-            sub_color = MUTED
-            badge_bg = "#2A1420"
-        else:
-            base, hover = CARD, "#1C2A47"
-            border, border_hv = BORDER, ACCENT
-            title_color = TEXT
-            sub_color = MUTED
-            badge_bg = BADGE_DK
+    def _icon_image(self, name, color, px=48):
+        key = (name, color, px)
+        if key not in self._icon_cache:
+            pil = _draw_icon(name, color, px)
+            self._icon_cache[key] = ctk.CTkImage(
+                light_image=pil, dark_image=pil, size=(px, px)
+            )
+        return self._icon_cache[key]
+
+    def _make_tile(self, parent, icon_name, title, subtitle, command, color):
+        """A professional transaction card: icon chip, title/subtitle, chevron."""
+        base = CARD
+        hover = CARD_HV
+        chip_bg = _blend(CARD, color, 0.18)
+        chip_bg_hv = _blend(CARD, color, 0.30)
 
         tile = ctk.CTkFrame(parent, fg_color=base, corner_radius=18,
-                            border_width=1, border_color=border)
+                            border_width=1, border_color=BORDER)
 
         inner = ctk.CTkFrame(tile, fg_color="transparent")
-        inner.place(relx=0.5, rely=0.5, anchor="center")
+        inner.pack(fill="both", expand=True, padx=26, pady=24)
 
-        badge = ctk.CTkFrame(inner, width=82, height=82, corner_radius=41,
-                             fg_color=badge_bg)
-        badge.pack()
-        badge.pack_propagate(False)
+        # Top row: icon chip (left) + chevron (right)
+        top = ctk.CTkFrame(inner, fg_color="transparent")
+        top.pack(fill="x")
+
+        chip = ctk.CTkFrame(top, width=64, height=64, corner_radius=16,
+                            fg_color=chip_bg)
+        chip.pack(side="left")
+        chip.pack_propagate(False)
         icon_label = ctk.CTkLabel(
-            badge, text=icon, fg_color="transparent",
-            font=ctk.CTkFont(size=34)
+            chip, text="", image=self._icon_image(icon_name, color),
+            fg_color="transparent"
         )
         icon_label.pack(expand=True)
 
-        title_label = ctk.CTkLabel(
-            inner, text=title, fg_color="transparent",
-            font=ctk.CTkFont(family=config.FONT_FAMILY, size=22, weight="bold"),
-            text_color=title_color
+        chevron = ctk.CTkLabel(
+            top, text="›", fg_color="transparent",
+            font=ctk.CTkFont(family=config.FONT_FAMILY, size=26, weight="bold"),
+            text_color=_blend(CARD, TEXT, 0.35)
         )
-        title_label.pack(pady=(16, 2))
+        chevron.pack(side="right", anchor="n")
+
+        # Bottom-anchored text block
+        bottom = ctk.CTkFrame(inner, fg_color="transparent")
+        bottom.pack(side="bottom", fill="x", anchor="w")
+
+        title_label = ctk.CTkLabel(
+            bottom, text=title, fg_color="transparent",
+            font=ctk.CTkFont(family=config.FONT_FAMILY, size=21, weight="bold"),
+            text_color=TEXT, anchor="w"
+        )
+        title_label.pack(anchor="w")
 
         sub_label = ctk.CTkLabel(
-            inner, text=subtitle, fg_color="transparent",
+            bottom, text=subtitle, fg_color="transparent",
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=12),
-            text_color=sub_color
+            text_color=MUTED, anchor="w"
         )
-        sub_label.pack()
+        sub_label.pack(anchor="w", pady=(2, 0))
 
         def on_enter(_=None):
-            tile.configure(fg_color=hover, border_color=border_hv)
+            tile.configure(fg_color=hover, border_color=color)
+            chip.configure(fg_color=chip_bg_hv)
+            chevron.configure(text_color=color)
 
         def on_leave(_=None):
-            tile.configure(fg_color=base, border_color=border)
+            tile.configure(fg_color=base, border_color=BORDER)
+            chip.configure(fg_color=chip_bg)
+            chevron.configure(text_color=_blend(CARD, TEXT, 0.35))
 
         # Whole card behaves as one button.
-        for widget in (tile, inner, badge, icon_label, title_label, sub_label):
+        for widget in (tile, inner, top, chip, icon_label, chevron,
+                       bottom, title_label, sub_label):
             widget.configure(cursor="hand2")
             widget.bind("<Button-1>", lambda _e: command())
             widget.bind("<Enter>", on_enter)
@@ -311,7 +428,7 @@ class BankingInterface:
         backdrop.bind("<Button-1>", lambda _e: None)  # swallow clicks
 
         panel = ctk.CTkFrame(backdrop, width=width, height=height,
-                             fg_color=CARD, corner_radius=18,
+                             fg_color=PANEL_CARD, corner_radius=18,
                              border_width=1, border_color=BORDER)
         panel.place(relx=0.5, rely=0.5, anchor="center")
         panel.pack_propagate(False)
