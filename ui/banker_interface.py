@@ -32,7 +32,7 @@ from utils.logger import logger
 
 # Shared design system — palette + icon renderer from the ATM dashboard.
 from ui.banking_interface import (
-    _blend, _draw_icon,
+    _blend, _draw_icon, _fmt,
     BG, CARD, CARD_HV, ACCENT, ACCENT_HV, DANGER, TEXT, MUTED,
     HEADER_BG, PANEL_DK, BORDER, PANEL_CARD,
     COL_WITHDRAW, COL_DEPOSIT, COL_TRANSFER, COL_STATEMENT, COL_PIN, COL_EXIT,
@@ -519,7 +519,7 @@ class BankerInterface:
 
     def _do_users(self):
         users = self.db.get_all_users()
-        panel = self._open_overlay(680, 620, "Registered Users",
+        panel = self._open_overlay(820, 660, "Registered Users",
                                    f"{len(users)} enrolled customer(s)")
 
         scroll = ctk.CTkScrollableFrame(panel, fg_color="transparent")
@@ -533,21 +533,61 @@ class BankerInterface:
             ).pack(pady=40)
         else:
             for user in users:
-                self._user_row(scroll, user)
+                accounts = self.db.get_accounts_by_user(user["user_id"])
+                account = accounts[0] if accounts else None
+                card = None
+                if account:
+                    cards = self.db.get_cards_by_account(account["account_id"])
+                    card = cards[0] if cards else None
+                self._user_row(scroll, user, account, card)
 
         self._close_button(panel)
 
-    def _user_row(self, parent, user: dict):
+    @staticmethod
+    def _group_card(number) -> str:
+        """1234567890123456 → 1234 5678 9012 3456"""
+        s = str(number or "")
+        return " ".join(s[i:i + 4] for i in range(0, len(s), 4)) or "N/A"
+
+    def _detail_cell(self, parent, label: str, value: str,
+                     value_color=None, mono=False, sub=None, sub_color=None):
+        cell = ctk.CTkFrame(parent, fg_color="transparent")
+        cell.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(
+            cell, text=label.upper(),
+            font=ctk.CTkFont(family=config.FONT_FAMILY, size=9, weight="bold"),
+            text_color=_blend(PANEL_DK, MUTED, 0.75), anchor="w"
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            cell, text=value,
+            font=(ctk.CTkFont(family="Consolas", size=13, weight="bold")
+                  if mono else
+                  ctk.CTkFont(family=config.FONT_FAMILY, size=13, weight="bold")),
+            text_color=value_color or TEXT, anchor="w"
+        ).pack(anchor="w")
+        if sub:
+            ctk.CTkLabel(
+                cell, text=sub,
+                font=ctk.CTkFont(family=config.FONT_FAMILY, size=10),
+                text_color=sub_color or MUTED, anchor="w"
+            ).pack(anchor="w")
+        return cell
+
+    def _user_row(self, parent, user: dict, account: Optional[dict] = None,
+                  card: Optional[dict] = None):
         row = ctk.CTkFrame(parent, fg_color=PANEL_DK, corner_radius=10)
         row.pack(fill="x", pady=4, padx=2)
 
-        # Initials avatar
+        # ── Top strip: avatar · name/id · FP ID · Remove ─────────
+        top = ctk.CTkFrame(row, fg_color="transparent")
+        top.pack(fill="x", padx=12, pady=(10, 0))
+
         name = user.get("name") or "?"
         parts = name.split()
         initials = (parts[0][0] + (parts[1][0] if len(parts) > 1 else "")).upper()
-        avatar = ctk.CTkFrame(row, width=40, height=40, corner_radius=20,
+        avatar = ctk.CTkFrame(top, width=40, height=40, corner_radius=20,
                               fg_color=_blend(PANEL_DK, COL_TRANSFER, 0.25))
-        avatar.pack(side="left", padx=(12, 10), pady=10)
+        avatar.pack(side="left", padx=(0, 10))
         avatar.pack_propagate(False)
         ctk.CTkLabel(
             avatar, text=initials, fg_color="transparent",
@@ -555,8 +595,8 @@ class BankerInterface:
             text_color=COL_TRANSFER
         ).pack(expand=True)
 
-        left = ctk.CTkFrame(row, fg_color="transparent")
-        left.pack(side="left", pady=8, fill="x", expand=True)
+        left = ctk.CTkFrame(top, fg_color="transparent")
+        left.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(
             left, text=name,
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=13, weight="bold"),
@@ -569,20 +609,59 @@ class BankerInterface:
         ).pack(anchor="w")
 
         ctk.CTkButton(
-            row, text="Remove",
+            top, text="Remove",
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=11, weight="bold"),
             fg_color="transparent", hover_color="#2A1420",
             text_color=DANGER, border_width=1, border_color=_blend(PANEL_DK, DANGER, 0.45),
             width=74, height=28, corner_radius=8,
             command=lambda u=user: self._confirm_remove(u)
-        ).pack(side="right", padx=(6, 12))
+        ).pack(side="right", padx=(6, 0))
 
         fp = user.get("fingerprint_id")
         ctk.CTkLabel(
-            row, text=f"FP ID {fp}" if fp is not None else "no FP",
+            top, text=f"FP ID {fp}" if fp is not None else "no FP",
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=11, weight="bold"),
             text_color=ACCENT if fp is not None else MUTED
         ).pack(side="right", padx=6)
+
+        # ── Divider ──────────────────────────────────────────────
+        ctk.CTkFrame(row, height=1, fg_color=_blend(PANEL_DK, BORDER, 0.9)
+                     ).pack(fill="x", padx=12, pady=(8, 6))
+
+        # ── Details strip: account · balance · card ──────────────
+        detail = ctk.CTkFrame(row, fg_color="transparent")
+        detail.pack(fill="x", padx=12, pady=(0, 10))
+
+        if account:
+            self._detail_cell(
+                detail, "Account",
+                str(account.get("account_number") or "N/A"), mono=True,
+                sub=str(account.get("account_type") or "").title() or None
+            )
+            self._detail_cell(
+                detail, "Balance",
+                _fmt(float(account.get("balance") or 0)),
+                value_color=ACCENT, sub="available"
+            )
+        else:
+            self._detail_cell(detail, "Account", "N/A",
+                              value_color=MUTED, sub="no account on file")
+
+        if card:
+            status = str(card.get("card_status") or "").lower()
+            status_color = (ACCENT if status == "active"
+                            else DANGER if status in ("blocked", "expired")
+                            else MUTED)
+            self._detail_cell(
+                detail, "Card",
+                self._group_card(card.get("card_number")), mono=True,
+                sub=f"exp {card.get('expiry_date', '—')}  •  "
+                    f"{(status or 'unknown').upper()}",
+                sub_color=status_color
+            )
+        else:
+            self._detail_cell(detail, "Card", "N/A",
+                              value_color=MUTED, sub="no card issued")
 
     def _confirm_remove(self, user: dict):
         """Ask for confirmation, then soft-delete the user by user id."""
