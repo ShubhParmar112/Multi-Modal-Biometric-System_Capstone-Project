@@ -38,7 +38,10 @@ class ATMInterface:
         self.root = ctk.CTk()
         self.root.title(config.WINDOW_TITLE)
         self.root.geometry(f"{config.WINDOW_WIDTH}x{config.WINDOW_HEIGHT}")
-        self.root.resizable(False, False)
+        # Allow resizing so the native maximize button is active; keep the
+        # design size as the minimum so the layout never gets clipped.
+        self.root.resizable(True, True)
+        self.root.minsize(config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
         self.root.configure(fg_color=config.SECONDARY_COLOR)
 
         # ── State Variables ──────────────────────────────────
