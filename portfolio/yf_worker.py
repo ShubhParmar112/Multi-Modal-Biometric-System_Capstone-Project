@@ -132,26 +132,40 @@ def _job_quotes(tickers: dict) -> list:
 
 def _job_history(ticker: str, period: str) -> list:
     """Daily closes + volume for one symbol as
-    [{"date", "close", "volume"}, ...] — batched yf.download only (never
-    Ticker.history/fast_info, see docstring). volume is int, 0 when the
-    Volume cell is NaN or missing."""
-    import math
+    [{"date", "close", "volume"}, ...], fetched from Yahoo's chart API with
+    plain requests — yf.download segfaults deterministically on several NSE
+    symbols (BAJAJFINSV.NS, HDFCBANK.NS, ...) and a segfault can't be caught
+    even inside this subprocess. Uses adjusted closes to match what the old
+    yf.download(auto_adjust=True) path stored."""
+    from datetime import datetime, timezone
 
-    import yfinance as yf
+    import requests
 
-    data = yf.download(
-        [ticker], period=period, interval="1d", progress=False,
-        auto_adjust=True, group_by="ticker", threads=False,
+    from portfolio.specific_picks import _UA
+
+    resp = requests.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}",
+        params={"range": period, "interval": "1d"},
+        headers={"User-Agent": _UA}, timeout=20,
     )
-    frame = data[ticker].dropna(subset=["Close"])
-    has_volume = "Volume" in frame.columns
+    resp.raise_for_status()
+    result = resp.json()["chart"]["result"][0]
+    quote = result["indicators"]["quote"][0]
+    adj = result["indicators"].get("adjclose", [{}])[0].get("adjclose")
+    closes = adj or quote.get("close") or []
+    volumes = quote.get("volume") or []
     rows = []
-    for idx, r in frame.iterrows():
-        vol = r["Volume"] if has_volume else None
+    for i, ts in enumerate(result.get("timestamp", [])):
+        close = closes[i] if i < len(closes) else None
+        if close is None:
+            continue
+        vol = volumes[i] if i < len(volumes) else None
         rows.append({
-            "date":   idx.strftime("%Y-%m-%d"),
-            "close":  round(float(r["Close"]), 4),
-            "volume": 0 if vol is None or math.isnan(vol) else int(vol),
+            # NSE daily candles stamp market open (03:45 UTC) — UTC date is
+            # already the IST trading date.
+            "date":   datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d"),
+            "close":  round(float(close), 4),
+            "volume": 0 if vol is None else int(vol),
         })
     return rows
 
