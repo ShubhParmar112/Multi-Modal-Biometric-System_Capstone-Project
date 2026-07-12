@@ -15,8 +15,15 @@ import yfinance directly; server code always goes through the subprocess
 worker (portfolio/yf_worker.py).
 
     python -m scripts.build_universe
+
+If you already have a pre-joined EQUITY_L + sector CSV (columns SYMBOL,
+NAME OF COMPANY, SERIES, ..., YF_SYMBOL, Sector), skip both phases and
+convert it directly:
+
+    python -m scripts.build_universe --from-csv path/to/equity_with_sector.csv
 """
 
+import argparse
 import csv
 import io
 import os
@@ -99,7 +106,45 @@ def _fill_sectors(rows: list):
     _write_csv(rows)
 
 
+def import_from_csv(src_path: str):
+    """Convert a pre-joined EQUITY_L + sector CSV straight into
+    data/universe.csv, skipping the download and the yfinance crawl.
+    Missing/"Unknown" sectors become "Others" — the app's catch-all
+    sector bucket."""
+    with open(src_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        # EQUITY_L headers arrive with stray spaces (" SERIES") — normalize.
+        reader.fieldnames = [h.strip() for h in reader.fieldnames]
+        rows = []
+        for src in reader:
+            if src.get("SERIES", "EQ").strip() != "EQ":
+                continue
+            ticker = (src.get("YF_SYMBOL", "").strip().upper()
+                      or f"{src['SYMBOL'].strip().upper()}.NS")
+            sector = src.get("Sector", "").strip()
+            if not sector or sector == "Unknown":
+                sector = "Others"
+            rows.append({
+                "ticker": ticker,
+                "name": src["NAME OF COMPANY"].strip(),
+                "sector": sector,
+            })
+    _write_csv(rows)
+    print(f"Imported {len(rows)} EQ rows from {src_path} -> {UNIVERSE_CSV}")
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--from-csv", metavar="PATH",
+        help="build universe.csv from a pre-joined EQUITY_L + sector CSV "
+             "instead of downloading and crawling yfinance")
+    args = parser.parse_args()
+
+    if args.from_csv:
+        import_from_csv(args.from_csv)
+        return
+
     print("Phase 1: downloading NSE EQUITY_L.csv ...")
     carried = _known_sectors()
     rows = _download_equity_list()

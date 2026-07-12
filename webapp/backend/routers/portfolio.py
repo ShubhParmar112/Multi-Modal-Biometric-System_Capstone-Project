@@ -1,7 +1,7 @@
 """Portfolio optimization endpoints - thin wrapper over PortfolioService,
 HoldingsService, and the risk/planner/holdings-analytics modules."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from advisor import nlp_engine
 from database.db_manager import DatabaseManager
@@ -154,14 +154,30 @@ def list_holdings(user=Depends(get_effective_user),
     return service.list_holdings(user["user_id"])
 
 
+def _fetch_prices_if_missing(service: HoldingsService, user_id: str,
+                             ticker: str, background_tasks: BackgroundTasks):
+    """Queue a background close-price fetch for a ticker with nothing in
+    daily_prices, so a fresh holding doesn't sit on buy-price estimates
+    until someone hits Refresh Prices."""
+    ticker = ticker.strip().upper()
+    if not service.db.get_price_history(ticker, days=7):
+        background_tasks.add_task(service.refresh_prices, user_id,
+                                  tickers=[ticker])
+
+
 @router.post("/holdings")
-def add_holding(req: HoldingRequest, user=Depends(get_current_user),
+def add_holding(req: HoldingRequest, background_tasks: BackgroundTasks,
+                user=Depends(get_current_user),
                 service: HoldingsService = Depends(get_holdings_service)):
     try:
-        return service.upsert_holding(user["user_id"], req.ticker,
-                                      req.quantity, req.avg_buy_price, req.name)
+        holding = service.upsert_holding(user["user_id"], req.ticker,
+                                         req.quantity, req.avg_buy_price,
+                                         req.name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _fetch_prices_if_missing(service, user["user_id"], req.ticker,
+                             background_tasks)
+    return holding
 
 
 @router.patch("/holdings/{ticker}")
@@ -193,13 +209,17 @@ def list_trades(limit: int = 100, user=Depends(get_effective_user),
 
 
 @router.post("/trades")
-def record_trade(req: TradeRequest, user=Depends(get_current_user),
+def record_trade(req: TradeRequest, background_tasks: BackgroundTasks,
+                 user=Depends(get_current_user),
                  service: HoldingsService = Depends(get_holdings_service)):
     try:
-        return service.record_trade(user["user_id"], req.ticker, req.action,
-                                    req.price, req.quantity, req.name)
+        result = service.record_trade(user["user_id"], req.ticker, req.action,
+                                      req.price, req.quantity, req.name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _fetch_prices_if_missing(service, user["user_id"], req.ticker,
+                             background_tasks)
+    return result
 
 
 @router.post("/holdings/prices/refresh")

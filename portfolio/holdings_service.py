@@ -88,8 +88,9 @@ def lookup_name(ticker: str) -> Optional[str]:
 
 
 def lookup_sector(ticker: str) -> str:
+    # "Others" matches universe.csv's catch-all bucket, so unknowns merge.
     meta = SEARCH_UNIVERSE.get(ticker)
-    return meta.get("sector", "Other") if meta else "Other"
+    return meta.get("sector", "Others") if meta else "Others"
 
 
 class HoldingsService:
@@ -190,11 +191,16 @@ class HoldingsService:
 
     # ── Price history refresh ────────────────────────────────────────────────
 
-    def refresh_prices(self, user_id: str, period: str = "1y") -> dict:
+    def refresh_prices(self, user_id: str, period: str = "1y",
+                       tickers: List[str] = None) -> dict:
         """Fetch daily closes for every holding plus the benchmark via the
-        isolated yfinance worker and upsert them into daily_prices."""
-        tickers = [h["ticker"] for h in self.db.get_holdings(user_id)]
-        tickers.append(BENCHMARK_TICKER)
+        isolated yfinance worker and upsert them into daily_prices. Pass
+        `tickers` to refresh just those (the benchmark is always included)."""
+        if tickers is None:
+            tickers = [h["ticker"] for h in self.db.get_holdings(user_id)]
+        else:
+            tickers = [t.strip().upper() for t in tickers]
+        tickers = tickers + [BENCHMARK_TICKER]
 
         histories = yf_worker.fetch_history_isolated(
             tickers, config.PORTFOLIO_PICKS_TIMEOUT, period=period)
