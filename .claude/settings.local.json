@@ -80,7 +80,19 @@
       "Bash(./venv/Scripts/python.exe -c \"import sys; sys.stdout.reconfigure\\(encoding='utf-8'\\); import ui.banking_interface as b; print\\('import OK:', b.BankingInterface.__name__\\)\")",
       "Bash(./venv/Scripts/python.exe -c \"import sys; sys.stdout.reconfigure\\(encoding='utf-8'\\); import ui.banking_interface as b; print\\('import OK'\\); print\\('methods:', [m for m in dir\\(b.BankingInterface\\) if not m.startswith\\('__'\\)][:12]\\)\")",
       "Bash(./venv/Scripts/python.exe -c \"import sys; sys.stdout.reconfigure\\(encoding='utf-8'\\); from database.db_manager import DatabaseManager; db=DatabaseManager\\(\\); us=db.get_all_users\\(\\); print\\([\\(u['user_id'], u['name']\\) for u in us][:5]\\)\")",
-      "Bash(./venv/Scripts/python.exe \"C:/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/8033c5ef-713a-4225-91c8-9a7f460f3b29/scratchpad/bank_smoke.py\")"
+      "Bash(./venv/Scripts/python.exe \"C:/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/8033c5ef-713a-4225-91c8-9a7f460f3b29/scratchpad/bank_smoke.py\")",
+      "Bash(./venv/Scripts/python.exe -m scripts.build_universe --from-csv \"C:\\\\Users\\\\Shubh Parmar\\\\Desktop\\\\NMIMS\\\\YEAR 6\\\\Semester XI\\\\Capstone Project\\\\equity_with_sector.csv\")",
+      "Bash(csv=\"C:\\\\Users\\\\Shubh Parmar\\\\Desktop\\\\NMIMS\\\\YEAR 6\\\\Semester XI\\\\Capstone Project\\\\equity_with_sector.csv\"; awk -F',' 'NR>1 {gsub\\(/^ +| +$/,\"\",$3\\); print $3}' \"$csv\" | sort | uniq -c; echo \"---universe---\"; head -3 data/universe.csv; wc -l data/universe.csv; grep -i suzlon data/universe.csv; grep -c Others data/universe.csv)",
+      "Bash(./venv/Scripts/python.exe -c \"from webapp.backend.auth import create_access_token; print\\(create_access_token\\('USR_PF_TEST'\\)\\)\")",
+      "Bash(curl -s http://localhost:8000/api/portfolio/ticker-search?q=SUZLON -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s http://localhost:8000/api/portfolio/ticker-search?q=zomato -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s http://localhost:8000/api/portfolio/ticker-search?q=suzlon%20energy -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s -X POST http://localhost:8000/api/portfolio/holdings -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -d '{\"ticker\":\"SUZLON.NS\",\"quantity\":12,\"avg_buy_price\":53.70}')",
+      "Bash(curl -s http://localhost:8000/api/portfolio/holdings/analytics -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s -X DELETE http://localhost:8000/api/portfolio/holdings/SUZLON.NS -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(./venv/Scripts/python.exe -m scripts.nightly_prices)"
     ]
   }
 }
