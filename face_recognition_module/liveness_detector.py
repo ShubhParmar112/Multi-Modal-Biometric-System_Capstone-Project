@@ -11,7 +11,6 @@ Eye Aspect Ratio (EAR) indices from the 478-landmark model:
 import os
 import cv2
 import numpy as np
-import time
 from typing import Tuple
 
 import config
@@ -48,10 +47,8 @@ class LivenessDetector:
     """
 
     def __init__(self):
-        self.blink_count   = 0
-        self.ear_history   = []
-        self.is_eye_closed = False
-        self._detector     = None  # FaceLandmarker (Tasks API)
+        self.blink_count = 0
+        self._detector   = None  # FaceLandmarker (Tasks API)
 
     # ─────────────────────────────────────────────────────────────
     # Detector initialisation
@@ -118,106 +115,6 @@ class LivenessDetector:
     # Public API
     # ─────────────────────────────────────────────────────────────
 
-    def check_liveness(self, timeout: int = None,
-                       required_blinks: int = None) -> Tuple[bool, int]:
-        """
-        Run liveness detection via webcam. User must blink naturally.
-
-        Returns:
-            Tuple of (passed: bool, blink_count: int)
-        """
-        timeout         = timeout         or config.LIVENESS_TIMEOUT
-        required_blinks = required_blinks or config.LIVENESS_BLINK_REQUIRED
-
-        cap = cv2.VideoCapture(config.CAMERA_INDEX)
-        if not cap.isOpened():
-            logger.error("Cannot open webcam for liveness detection")
-            return False, 0
-
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  config.CAMERA_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
-
-        self.blink_count   = 0
-        self.is_eye_closed = False
-        consec_closed      = 0
-        start_time         = time.time()
-
-        logger.info(f"Liveness check started. Please blink {required_blinks} times.")
-
-        while time.time() - start_time < timeout:
-            ret, frame = cap.read()
-            if not ret:
-                continue
-
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            ear, left_pts, right_pts = self._get_ear_from_frame(rgb)
-            display = frame.copy()
-
-            if left_pts.size > 0:
-                cv2.polylines(display, [left_pts.astype(np.int32)],
-                              True, (0, 212, 170), 1)
-                cv2.polylines(display, [right_pts.astype(np.int32)],
-                              True, (0, 212, 170), 1)
-
-                if ear < config.EYE_AR_THRESH:
-                    consec_closed += 1
-                else:
-                    if consec_closed >= config.EYE_AR_CONSEC_FRAMES:
-                        self.blink_count += 1
-                        logger.info(
-                            f"Blink detected! ({self.blink_count}/{required_blinks})")
-                    consec_closed = 0
-
-                cv2.putText(display, f"EAR: {ear:.3f}",
-                            (display.shape[1] - 150, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 212, 170), 1)
-            else:
-                cv2.putText(display, "No face detected",
-                            (10, display.shape[0] - 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 233), 2)
-
-            elapsed   = time.time() - start_time
-            remaining = max(0, timeout - elapsed)
-
-            cv2.rectangle(display, (0, 0), (display.shape[1], 50), (26, 26, 46), -1)
-            cv2.putText(display,
-                        f"LIVENESS CHECK | Blinks: "
-                        f"{self.blink_count}/{required_blinks} "
-                        f"| Time: {remaining:.0f}s",
-                        (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 212, 170), 1)
-            cv2.putText(display, "Please blink naturally",
-                        (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
-
-            progress  = self.blink_count / required_blinks
-            bar_width = int(display.shape[1] * 0.6)
-            bar_x     = int(display.shape[1] * 0.2)
-            bar_y     = display.shape[0] - 20
-            cv2.rectangle(display, (bar_x, bar_y),
-                          (bar_x + bar_width, bar_y + 10), (50, 50, 80), -1)
-            cv2.rectangle(display, (bar_x, bar_y),
-                          (bar_x + int(bar_width * min(progress, 1.0)), bar_y + 10),
-                          (0, 212, 170), -1)
-
-            cv2.imshow("Liveness Detection", display)
-
-            if self.blink_count >= required_blinks:
-                logger.success("Liveness check PASSED")
-                time.sleep(0.5)
-                break
-
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                logger.warning("Liveness check cancelled by user")
-                break
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-        passed = self.blink_count >= required_blinks
-        if not passed:
-            logger.warning(
-                f"Liveness check FAILED: {self.blink_count}/{required_blinks} blinks")
-        return passed, self.blink_count
-
     def check_frame_liveness(self, frame: np.ndarray) -> Tuple[
             float, bool, np.ndarray]:
         """
@@ -241,6 +138,4 @@ class LivenessDetector:
 
     def reset(self):
         """Reset blink counter for a new liveness check."""
-        self.blink_count   = 0
-        self.is_eye_closed = False
-        self.ear_history   = []
+        self.blink_count = 0

@@ -8,6 +8,7 @@ import hashlib
 import os
 import pickle
 import random
+from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 
 import config
@@ -31,6 +32,16 @@ class DatabaseManager:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+    @contextmanager
+    def _conn(self, commit: bool = False):
+        conn = self._get_connection()
+        try:
+            yield conn
+            if commit:
+                conn.commit()
+        finally:
+            conn.close()
 
     def _initialize_db(self):
         """Create the users table if it doesn't exist."""
@@ -291,19 +302,18 @@ class DatabaseManager:
         Returns:
             True if user was added successfully, False otherwise
         """
-        conn = self._get_connection()
         try:
             encoding_blob = None
             if face_encoding is not None:
                 encoding_blob = pickle.dumps(face_encoding)
 
-            conn.execute(
-                """INSERT INTO users (user_id, name, face_encoding,
-                   fingerprint_id, pin_hash, email) VALUES (?, ?, ?, ?, ?, ?)""",
-                (user_id, name, encoding_blob, fingerprint_id,
-                 self._hash_pin(pin), email)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO users (user_id, name, face_encoding,
+                       fingerprint_id, pin_hash, email) VALUES (?, ?, ?, ?, ?, ?)""",
+                    (user_id, name, encoding_blob, fingerprint_id,
+                     self._hash_pin(pin), email)
+                )
             logger.success(f"User added: {user_id} ({name})")
             return True
         except sqlite3.IntegrityError as e:
@@ -312,13 +322,10 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to add user: {e}")
             return False
-        finally:
-            conn.close()
 
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a user record by user_id."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM users WHERE user_id = ? AND is_active = 1",
                 (user_id,)
@@ -329,13 +336,10 @@ class DatabaseManager:
                     user["face_encoding"] = pickle.loads(user["face_encoding"])
                 return user
             return None
-        finally:
-            conn.close()
 
     def get_user_by_fingerprint(self, fingerprint_id: int) -> Optional[Dict[str, Any]]:
         """Retrieve a user record by fingerprint ID."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM users WHERE fingerprint_id = ? AND is_active = 1",
                 (fingerprint_id,)
@@ -346,19 +350,14 @@ class DatabaseManager:
                     user["face_encoding"] = pickle.loads(user["face_encoding"])
                 return user
             return None
-        finally:
-            conn.close()
 
     def get_all_users(self) -> List[Dict[str, Any]]:
         """Retrieve all active users."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 "SELECT user_id, name, fingerprint_id, created_at FROM users WHERE is_active = 1"
             ).fetchall()
             return [dict(row) for row in rows]
-        finally:
-            conn.close()
 
     def verify_pin(self, user_id: str, pin: str) -> bool:
         """
@@ -367,8 +366,7 @@ class DatabaseManager:
         Returns:
             True if PIN matches, False otherwise
         """
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT pin_hash FROM users WHERE user_id = ? AND is_active = 1",
                 (user_id,)
@@ -376,105 +374,84 @@ class DatabaseManager:
             if row and row["pin_hash"] == self._hash_pin(pin):
                 return True
             return False
-        finally:
-            conn.close()
 
     def update_face_encoding(self, user_id: str, face_encoding) -> bool:
         """Update the face encoding for an existing user."""
-        conn = self._get_connection()
         try:
             encoding_blob = pickle.dumps(face_encoding)
-            conn.execute(
-                "UPDATE users SET face_encoding = ? WHERE user_id = ?",
-                (encoding_blob, user_id)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    "UPDATE users SET face_encoding = ? WHERE user_id = ?",
+                    (encoding_blob, user_id)
+                )
             logger.info(f"Face encoding updated for user: {user_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to update face encoding: {e}")
             return False
-        finally:
-            conn.close()
 
     def update_user_email(self, user_id: str, email: str) -> bool:
         """Update the notification email address for a user."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                "UPDATE users SET email = ? WHERE user_id = ?",
-                (email, user_id)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    "UPDATE users SET email = ? WHERE user_id = ?",
+                    (email, user_id)
+                )
             logger.info(f"Email updated for user: {user_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to update email: {e}")
             return False
-        finally:
-            conn.close()
 
     def update_user_theme(self, user_id: str, theme: str) -> bool:
         """Persist the user's web theme preference (dark/light/system)."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                "UPDATE users SET theme = ? WHERE user_id = ?",
-                (theme, user_id)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    "UPDATE users SET theme = ? WHERE user_id = ?",
+                    (theme, user_id)
+                )
             return True
         except Exception as e:
             logger.error(f"Failed to update theme: {e}")
             return False
-        finally:
-            conn.close()
 
     def set_two_factor(self, user_id: str, enabled: bool) -> bool:
         """Turn the web-login 2FA step on or off for a user."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                "UPDATE users SET two_factor_enabled = ? WHERE user_id = ?",
-                (1 if enabled else 0, user_id)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    "UPDATE users SET two_factor_enabled = ? WHERE user_id = ?",
+                    (1 if enabled else 0, user_id)
+                )
             logger.info(f"2FA {'enabled' if enabled else 'disabled'} for {user_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to update 2FA setting: {e}")
             return False
-        finally:
-            conn.close()
 
     def update_pin(self, user_id: str, new_pin: str) -> bool:
         """Replace a user's PIN hash."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                "UPDATE users SET pin_hash = ? WHERE user_id = ?",
-                (self._hash_pin(new_pin), user_id)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    "UPDATE users SET pin_hash = ? WHERE user_id = ?",
+                    (self._hash_pin(new_pin), user_id)
+                )
             logger.info(f"PIN changed for user: {user_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to update PIN: {e}")
             return False
-        finally:
-            conn.close()
 
     def update_last_login(self, user_id: str):
         """Update the last login timestamp for a user."""
-        conn = self._get_connection()
-        try:
+        with self._conn(commit=True) as conn:
             conn.execute(
                 "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?",
                 (user_id,)
             )
-            conn.commit()
-        finally:
-            conn.close()
 
     def log_auth_event(self, user_id: str, event_type: str,
                        result: str, details: str = ""):
@@ -489,24 +466,20 @@ class DatabaseManager:
         """
         if not config.AUTH_LOG_ENABLED:
             return
-        conn = self._get_connection()
         try:
-            conn.execute(
-                """INSERT INTO auth_logs (user_id, event_type, result, details)
-                   VALUES (?, ?, ?, ?)""",
-                (user_id, event_type, result, details)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO auth_logs (user_id, event_type, result, details)
+                       VALUES (?, ?, ?, ?)""",
+                    (user_id, event_type, result, details)
+                )
         except Exception as e:
             logger.error(f"Failed to log auth event: {e}")
-        finally:
-            conn.close()
 
     def get_auth_logs(self, user_id: str = None,
                       limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieve recent authentication logs, optionally filtered by user."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             if user_id:
                 rows = conn.execute(
                     """SELECT * FROM auth_logs WHERE user_id = ?
@@ -519,105 +492,84 @@ class DatabaseManager:
                     (limit,)
                 ).fetchall()
             return [dict(row) for row in rows]
-        finally:
-            conn.close()
 
     def delete_user(self, user_id: str) -> bool:
         """Soft-delete a user by marking them inactive."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                "UPDATE users SET is_active = 0 WHERE user_id = ?",
-                (user_id,)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    "UPDATE users SET is_active = 0 WHERE user_id = ?",
+                    (user_id,)
+                )
             logger.info(f"User deactivated: {user_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to delete user: {e}")
             return False
-        finally:
-            conn.close()
 
     # ── Accounts ──────────────────────────────────────────────
 
     def create_account(self, user_id: str, account_type: str = "savings",
                        currency: str = "INR") -> Optional[str]:
         """Create a new account for an existing user."""
-        conn = self._get_connection()
         try:
-            count = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
-            account_id = f"ACC{count + 1:04d}"
-            account_number = "".join(str(random.randint(0, 9)) for _ in range(12))
-            conn.execute(
-                """INSERT INTO accounts (account_id, user_id, account_number,
-                   account_type, currency) VALUES (?, ?, ?, ?, ?)""",
-                (account_id, user_id, account_number, account_type, currency)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                count = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+                account_id = f"ACC{count + 1:04d}"
+                account_number = "".join(str(random.randint(0, 9)) for _ in range(12))
+                conn.execute(
+                    """INSERT INTO accounts (account_id, user_id, account_number,
+                       account_type, currency) VALUES (?, ?, ?, ?, ?)""",
+                    (account_id, user_id, account_number, account_type, currency)
+                )
             logger.success(f"Account created: {account_id} for {user_id}")
             return account_id
         except Exception as e:
             logger.error(f"Failed to create account: {e}")
             return None
-        finally:
-            conn.close()
 
     def get_account(self, account_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve an account record by account_id."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM accounts WHERE account_id = ?", (account_id,)
             ).fetchone()
             return dict(row) if row else None
-        finally:
-            conn.close()
 
     def get_accounts_by_user(self, user_id: str) -> List[Dict[str, Any]]:
         """Retrieve all accounts belonging to a user."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM accounts WHERE user_id = ?", (user_id,)
             ).fetchall()
             return [dict(row) for row in rows]
-        finally:
-            conn.close()
 
     def get_account_by_number(self, account_number: str) -> Optional[Dict[str, Any]]:
         """Retrieve an account record by account_number."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM accounts WHERE account_number = ?", (account_number,)
             ).fetchone()
             return dict(row) if row else None
-        finally:
-            conn.close()
 
     def update_account_balance(self, account_id: str, new_balance: float) -> bool:
         """Update the stored balance for an account."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                "UPDATE accounts SET balance = ? WHERE account_id = ?",
-                (new_balance, account_id)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    "UPDATE accounts SET balance = ? WHERE account_id = ?",
+                    (new_balance, account_id)
+                )
             return True
         except Exception as e:
             logger.error(f"Failed to update account balance: {e}")
             return False
-        finally:
-            conn.close()
 
     # ── Cards ─────────────────────────────────────────────────
 
     def generate_card_number(self) -> str:
         """Generate a unique 16-digit Luhn-valid card number."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             while True:
                 base = "".join(str(random.randint(0, 9)) for _ in range(15))
                 digits = [int(d) for d in base] + [0]
@@ -631,51 +583,40 @@ class DatabaseManager:
                 ).fetchone()
                 if not exists:
                     return card_number
-        finally:
-            conn.close()
 
     def create_card(self, account_id: str, user_id: str, expiry_date: str,
                     cvv: str) -> Optional[str]:
         """Issue a new card linked to an account."""
         card_number = self.generate_card_number()
-        conn = self._get_connection()
         try:
-            conn.execute(
-                """INSERT INTO cards (card_number, account_id, user_id,
-                   expiry_date, cvv_hash) VALUES (?, ?, ?, ?, ?)""",
-                (card_number, account_id, user_id, expiry_date,
-                 self._hash_pin(cvv))
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO cards (card_number, account_id, user_id,
+                       expiry_date, cvv_hash) VALUES (?, ?, ?, ?, ?)""",
+                    (card_number, account_id, user_id, expiry_date,
+                     self._hash_pin(cvv))
+                )
             logger.success(f"Card issued: {card_number} for account {account_id}")
             return card_number
         except Exception as e:
             logger.error(f"Failed to create card: {e}")
             return None
-        finally:
-            conn.close()
 
     def get_card(self, card_number: str) -> Optional[Dict[str, Any]]:
         """Retrieve a card record by card_number."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM cards WHERE card_number = ?", (card_number,)
             ).fetchone()
             return dict(row) if row else None
-        finally:
-            conn.close()
 
     def get_cards_by_account(self, account_id: str) -> List[Dict[str, Any]]:
         """Retrieve all cards linked to an account."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM cards WHERE account_id = ?", (account_id,)
             ).fetchall()
             return [dict(row) for row in rows]
-        finally:
-            conn.close()
 
     # ── Transactions ──────────────────────────────────────────
 
@@ -686,78 +627,66 @@ class DatabaseManager:
                            status: str = "success",
                            category: str = "Other") -> Optional[int]:
         """Record a transaction against an account."""
-        conn = self._get_connection()
         try:
-            cursor = conn.execute(
-                """INSERT INTO transactions (account_id, txn_type, amount,
-                   balance_after, counterparty_account, channel, status, category)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (account_id, txn_type, amount, balance_after,
-                 counterparty_account, channel, status, category)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                cursor = conn.execute(
+                    """INSERT INTO transactions (account_id, txn_type, amount,
+                       balance_after, counterparty_account, channel, status, category)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (account_id, txn_type, amount, balance_after,
+                     counterparty_account, channel, status, category)
+                )
+                txn_id = cursor.lastrowid
             logger.info(f"Transaction recorded: {txn_type} {amount} on {account_id}")
-            return cursor.lastrowid
+            return txn_id
         except Exception as e:
             logger.error(f"Failed to record transaction: {e}")
             return None
-        finally:
-            conn.close()
 
     def get_transactions(self, account_id: str,
                          limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieve recent transactions for an account."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 """SELECT * FROM transactions WHERE account_id = ?
                    ORDER BY timestamp DESC LIMIT ?""",
                 (account_id, limit)
             ).fetchall()
             return [dict(row) for row in rows]
-        finally:
-            conn.close()
 
     def get_categories(self) -> List[str]:
         """Retrieve all available transaction categories (predefined + custom)."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 "SELECT name FROM categories ORDER BY created_at"
             ).fetchall()
             return [row["name"] for row in rows]
-        finally:
-            conn.close()
 
     def add_category(self, name: str) -> bool:
         """Add a custom transaction category."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                "INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,)
+                )
             logger.success(f"Category added: {name}")
             return True
         except Exception as e:
             logger.error(f"Failed to add category: {e}")
             return False
-        finally:
-            conn.close()
 
     # ── Beneficiaries ─────────────────────────────────────────
 
     def add_beneficiary(self, user_id: str, name: str,
                         account_number: str) -> bool:
         """Save a beneficiary (transfer recipient) for a user."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                """INSERT INTO beneficiaries (user_id, name, account_number)
-                   VALUES (?, ?, ?)""",
-                (user_id, name, account_number)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO beneficiaries (user_id, name, account_number)
+                       VALUES (?, ?, ?)""",
+                    (user_id, name, account_number)
+                )
             logger.success(f"Beneficiary added for {user_id}: {name}")
             return True
         except sqlite3.IntegrityError:
@@ -766,51 +695,42 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to add beneficiary: {e}")
             return False
-        finally:
-            conn.close()
 
     def get_beneficiaries(self, user_id: str) -> List[Dict[str, Any]]:
         """Retrieve all beneficiaries saved by a user."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 """SELECT * FROM beneficiaries WHERE user_id = ?
                    ORDER BY added_at DESC""",
                 (user_id,)
             ).fetchall()
             return [dict(row) for row in rows]
-        finally:
-            conn.close()
 
     def delete_beneficiary(self, user_id: str, beneficiary_id: int) -> bool:
         """Remove a beneficiary (scoped to the owning user)."""
-        conn = self._get_connection()
         try:
-            cursor = conn.execute(
-                "DELETE FROM beneficiaries WHERE beneficiary_id = ? AND user_id = ?",
-                (beneficiary_id, user_id)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+            with self._conn(commit=True) as conn:
+                cursor = conn.execute(
+                    "DELETE FROM beneficiaries WHERE beneficiary_id = ? AND user_id = ?",
+                    (beneficiary_id, user_id)
+                )
+                return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"Failed to delete beneficiary: {e}")
             return False
-        finally:
-            conn.close()
 
     # ── Account access grants (beneficiary read access) ──────
 
     def add_access_grant(self, granter_user_id: str,
                          grantee_user_id: str) -> bool:
         """Grant another user read access to the granter's data."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                """INSERT INTO account_access_grants
-                   (granter_user_id, grantee_user_id) VALUES (?, ?)""",
-                (granter_user_id, grantee_user_id)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO account_access_grants
+                       (granter_user_id, grantee_user_id) VALUES (?, ?)""",
+                    (granter_user_id, grantee_user_id)
+                )
             logger.success(
                 f"Access grant: {granter_user_id} -> {grantee_user_id}")
             return True
@@ -821,30 +741,24 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to add access grant: {e}")
             return False
-        finally:
-            conn.close()
 
     def delete_access_grant(self, granter_user_id: str, grant_id: int) -> bool:
         """Revoke a grant (scoped to the granting user)."""
-        conn = self._get_connection()
         try:
-            cursor = conn.execute(
-                """DELETE FROM account_access_grants
-                   WHERE grant_id = ? AND granter_user_id = ?""",
-                (grant_id, granter_user_id)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+            with self._conn(commit=True) as conn:
+                cursor = conn.execute(
+                    """DELETE FROM account_access_grants
+                       WHERE grant_id = ? AND granter_user_id = ?""",
+                    (grant_id, granter_user_id)
+                )
+                return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"Failed to delete access grant: {e}")
             return False
-        finally:
-            conn.close()
 
     def get_access_grants(self, granter_user_id: str) -> List[Dict[str, Any]]:
         """All grants this user has given, with the grantee's name."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 """SELECT g.grant_id, g.grantee_user_id, g.created_at, u.name
                    FROM account_access_grants g
@@ -853,13 +767,10 @@ class DatabaseManager:
                 (granter_user_id,)
             ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     def get_accounts_shared_with(self, grantee_user_id: str) -> List[Dict[str, Any]]:
         """Accounts (granters) this user may view."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 """SELECT g.granter_user_id AS user_id, u.name, g.created_at
                    FROM account_access_grants g
@@ -869,22 +780,17 @@ class DatabaseManager:
                 (grantee_user_id,)
             ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     def has_access_grant(self, granter_user_id: str,
                          grantee_user_id: str) -> bool:
         """True if grantee may view granter's data."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 """SELECT 1 FROM account_access_grants
                    WHERE granter_user_id = ? AND grantee_user_id = ?""",
                 (granter_user_id, grantee_user_id)
             ).fetchone()
             return row is not None
-        finally:
-            conn.close()
 
     # ── Fraud logs ────────────────────────────────────────────
 
@@ -892,15 +798,14 @@ class DatabaseManager:
                  risk_category: str, model_used: str,
                  notes: str = "") -> bool:
         """Log a fraud risk assessment for a transaction."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                """INSERT INTO fraud_logs (transaction_id, risk_score,
-                   risk_category, model_used, notes)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (transaction_id, risk_score, risk_category, model_used, notes)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO fraud_logs (transaction_id, risk_score,
+                       risk_category, model_used, notes)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (transaction_id, risk_score, risk_category, model_used, notes)
+                )
             logger.warning(
                 f"Fraud logged for txn {transaction_id}: "
                 f"{risk_category} ({risk_score})"
@@ -909,14 +814,11 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to log fraud: {e}")
             return False
-        finally:
-            conn.close()
 
     def get_fraud_logs(self, transaction_id: int = None,
                        limit: int = 50) -> List[Dict[str, Any]]:
         """Retrieve fraud log entries, optionally filtered by transaction."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             if transaction_id:
                 rows = conn.execute(
                     """SELECT * FROM fraud_logs WHERE transaction_id = ?
@@ -929,8 +831,6 @@ class DatabaseManager:
                     (limit,)
                 ).fetchall()
             return [dict(row) for row in rows]
-        finally:
-            conn.close()
 
     # ── Investment profiles & portfolio recommendations ──────
 
@@ -939,40 +839,34 @@ class DatabaseManager:
                                   monthly_savings: float,
                                   available_balance: float) -> bool:
         """Create or update a user's investment profile."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                """INSERT INTO investment_profiles (user_id, risk_appetite,
-                   investment_horizon_years, monthly_savings, available_balance)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(user_id) DO UPDATE SET
-                       risk_appetite = excluded.risk_appetite,
-                       investment_horizon_years = excluded.investment_horizon_years,
-                       monthly_savings = excluded.monthly_savings,
-                       available_balance = excluded.available_balance,
-                       updated_at = CURRENT_TIMESTAMP""",
-                (user_id, risk_appetite, investment_horizon_years,
-                 monthly_savings, available_balance)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO investment_profiles (user_id, risk_appetite,
+                       investment_horizon_years, monthly_savings, available_balance)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(user_id) DO UPDATE SET
+                           risk_appetite = excluded.risk_appetite,
+                           investment_horizon_years = excluded.investment_horizon_years,
+                           monthly_savings = excluded.monthly_savings,
+                           available_balance = excluded.available_balance,
+                           updated_at = CURRENT_TIMESTAMP""",
+                    (user_id, risk_appetite, investment_horizon_years,
+                     monthly_savings, available_balance)
+                )
             logger.success(f"Investment profile saved for {user_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to save investment profile: {e}")
             return False
-        finally:
-            conn.close()
 
     def get_investment_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a user's investment profile."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM investment_profiles WHERE user_id = ?", (user_id,)
             ).fetchone()
             return dict(row) if row else None
-        finally:
-            conn.close()
 
     def save_portfolio_recommendation(
             self, profile_id: int, equity_pct: float = 0.0,
@@ -982,137 +876,114 @@ class DatabaseManager:
             expected_risk: float = None,
             sharpe_ratio: float = None) -> Optional[int]:
         """Save a generated portfolio allocation for an investment profile."""
-        conn = self._get_connection()
         try:
-            cursor = conn.execute(
-                """INSERT INTO portfolio_recommendations (profile_id,
-                   equity_pct, debt_pct, gold_pct, fd_pct, cash_pct,
-                   mutual_funds_pct, expected_return, expected_risk,
-                   sharpe_ratio)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (profile_id, equity_pct, debt_pct, gold_pct, fd_pct,
-                 cash_pct, mutual_funds_pct, expected_return,
-                 expected_risk, sharpe_ratio)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                cursor = conn.execute(
+                    """INSERT INTO portfolio_recommendations (profile_id,
+                       equity_pct, debt_pct, gold_pct, fd_pct, cash_pct,
+                       mutual_funds_pct, expected_return, expected_risk,
+                       sharpe_ratio)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (profile_id, equity_pct, debt_pct, gold_pct, fd_pct,
+                     cash_pct, mutual_funds_pct, expected_return,
+                     expected_risk, sharpe_ratio)
+                )
+                rec_id = cursor.lastrowid
             logger.success(f"Portfolio recommendation saved for profile {profile_id}")
-            return cursor.lastrowid
+            return rec_id
         except Exception as e:
             logger.error(f"Failed to save portfolio recommendation: {e}")
             return None
-        finally:
-            conn.close()
 
     def get_latest_portfolio_recommendation(
             self, profile_id: int) -> Optional[Dict[str, Any]]:
         """Retrieve the most recent portfolio recommendation for a profile."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 """SELECT * FROM portfolio_recommendations
                    WHERE profile_id = ? ORDER BY generated_at DESC LIMIT 1""",
                 (profile_id,)
             ).fetchone()
             return dict(row) if row else None
-        finally:
-            conn.close()
 
     # ── Portfolio holdings & trades ──────────────────────────────────────────
 
     def get_holdings(self, user_id: str) -> List[Dict[str, Any]]:
         """All of a user's holdings, largest cost basis first."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 """SELECT * FROM portfolio_holdings WHERE user_id = ?
                    ORDER BY quantity * avg_buy_price DESC""",
                 (user_id,)
             ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     def get_holding(self, user_id: str, ticker: str) -> Optional[Dict[str, Any]]:
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM portfolio_holdings WHERE user_id = ? AND ticker = ?",
                 (user_id, ticker)
             ).fetchone()
             return dict(row) if row else None
-        finally:
-            conn.close()
 
     def upsert_holding(self, user_id: str, ticker: str, name: str,
                        quantity: float, avg_buy_price: float) -> bool:
         """Create or overwrite a holding's quantity and average price."""
-        conn = self._get_connection()
         try:
-            conn.execute(
-                """INSERT INTO portfolio_holdings
-                   (user_id, ticker, name, quantity, avg_buy_price)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(user_id, ticker) DO UPDATE SET
-                       name = excluded.name,
-                       quantity = excluded.quantity,
-                       avg_buy_price = excluded.avg_buy_price,
-                       updated_at = CURRENT_TIMESTAMP""",
-                (user_id, ticker, name, quantity, avg_buy_price)
-            )
-            conn.commit()
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO portfolio_holdings
+                       (user_id, ticker, name, quantity, avg_buy_price)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(user_id, ticker) DO UPDATE SET
+                           name = excluded.name,
+                           quantity = excluded.quantity,
+                           avg_buy_price = excluded.avg_buy_price,
+                           updated_at = CURRENT_TIMESTAMP""",
+                    (user_id, ticker, name, quantity, avg_buy_price)
+                )
             return True
         except Exception as e:
             logger.error(f"Failed to save holding {ticker}: {e}")
             return False
-        finally:
-            conn.close()
 
     def delete_holding(self, user_id: str, ticker: str) -> bool:
-        conn = self._get_connection()
         try:
-            cursor = conn.execute(
-                "DELETE FROM portfolio_holdings WHERE user_id = ? AND ticker = ?",
-                (user_id, ticker)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+            with self._conn(commit=True) as conn:
+                cursor = conn.execute(
+                    "DELETE FROM portfolio_holdings WHERE user_id = ? AND ticker = ?",
+                    (user_id, ticker)
+                )
+                return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"Failed to delete holding {ticker}: {e}")
             return False
-        finally:
-            conn.close()
 
     def record_portfolio_trade(self, user_id: str, ticker: str, action: str,
                                price: float, quantity: float) -> Optional[int]:
-        conn = self._get_connection()
         try:
-            cursor = conn.execute(
-                """INSERT INTO portfolio_trades
-                   (user_id, ticker, action, price, quantity)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (user_id, ticker, action, price, quantity)
-            )
-            conn.commit()
-            return cursor.lastrowid
+            with self._conn(commit=True) as conn:
+                cursor = conn.execute(
+                    """INSERT INTO portfolio_trades
+                       (user_id, ticker, action, price, quantity)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (user_id, ticker, action, price, quantity)
+                )
+                return cursor.lastrowid
         except Exception as e:
             logger.error(f"Failed to record trade {action} {ticker}: {e}")
             return None
-        finally:
-            conn.close()
 
     def get_portfolio_trades(self, user_id: str,
                              limit: int = 100) -> List[Dict[str, Any]]:
         """A user's trade log, newest first."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 """SELECT * FROM portfolio_trades WHERE user_id = ?
                    ORDER BY traded_at DESC, trade_id DESC LIMIT ?""",
                 (user_id, limit)
             ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     # ── Daily prices ─────────────────────────────────────────────────────────
 
@@ -1120,34 +991,30 @@ class DatabaseManager:
         """Batch upsert of (price_date 'YYYY-MM-DD', close_price) or
         (price_date, close_price, volume) tuples. Volume defaults to NULL
         when a 2-tuple is passed."""
-        conn = self._get_connection()
         try:
-            prepared = []
-            for row in rows:
-                if len(row) == 3:
-                    d, p, v = row
-                else:
-                    (d, p), v = row, None
-                prepared.append((ticker, d, p, v))
-            conn.executemany(
-                """INSERT OR REPLACE INTO daily_prices
-                   (ticker, price_date, close_price, volume)
-                   VALUES (?, ?, ?, ?)""",
-                prepared
-            )
-            conn.commit()
-            return len(rows)
+            with self._conn(commit=True) as conn:
+                prepared = []
+                for row in rows:
+                    if len(row) == 3:
+                        d, p, v = row
+                    else:
+                        (d, p), v = row, None
+                    prepared.append((ticker, d, p, v))
+                conn.executemany(
+                    """INSERT OR REPLACE INTO daily_prices
+                       (ticker, price_date, close_price, volume)
+                       VALUES (?, ?, ?, ?)""",
+                    prepared
+                )
+                return len(rows)
         except Exception as e:
             logger.error(f"Failed to store prices for {ticker}: {e}")
             return 0
-        finally:
-            conn.close()
 
     def get_price_history(self, ticker: str,
                           days: int = None) -> List[Dict[str, Any]]:
         """Stored closes for a ticker, oldest first."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             sql = """SELECT price_date, close_price FROM daily_prices
                      WHERE ticker = ? ORDER BY price_date DESC"""
             params = [ticker]
@@ -1156,15 +1023,12 @@ class DatabaseManager:
                 params.append(days)
             rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in reversed(rows)]
-        finally:
-            conn.close()
 
     def get_latest_prices(self, tickers: List[str]) -> Dict[str, Dict[str, Any]]:
         """Newest stored close per ticker: {ticker: {price_date, close_price}}."""
         if not tickers:
             return {}
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             placeholders = ",".join("?" for _ in tickers)
             rows = conn.execute(
                 f"""SELECT ticker, price_date, close_price FROM (
@@ -1176,8 +1040,6 @@ class DatabaseManager:
             ).fetchall()
             return {r["ticker"]: {"price_date": r["price_date"],
                                   "close_price": r["close_price"]} for r in rows}
-        finally:
-            conn.close()
 
     # ── Market movers & trade leaders ────────────────────────────────────────
 
@@ -1186,8 +1048,7 @@ class DatabaseManager:
         volume, computed from the two most recent stored closes per ticker
         (same ROW_NUMBER window as get_latest_prices). The '^NSEI' index is
         excluded. Each row is {ticker, close_price, change_pct, volume}."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             rows = conn.execute(
                 """SELECT ticker, close_price, volume, rn FROM (
                         SELECT *, ROW_NUMBER() OVER (
@@ -1195,8 +1056,6 @@ class DatabaseManager:
                         ) AS rn FROM daily_prices WHERE ticker != '^NSEI'
                     ) WHERE rn <= 2"""
             ).fetchall()
-        finally:
-            conn.close()
 
         latest, previous = {}, {}
         for r in rows:
@@ -1232,8 +1091,7 @@ class DatabaseManager:
         """Most-bought / most-sold tickers across all users' portfolio_trades,
         each side ranked by total traded quantity. Rows are
         {ticker, total_quantity, trade_count}."""
-        conn = self._get_connection()
-        try:
+        with self._conn() as conn:
             def leaders(action: str) -> List[Dict[str, Any]]:
                 rows = conn.execute(
                     """SELECT ticker, SUM(quantity) AS total_quantity,
@@ -1249,5 +1107,3 @@ class DatabaseManager:
 
             return {"most_bought": leaders("BUY"),
                     "most_sold": leaders("SELL")}
-        finally:
-            conn.close()

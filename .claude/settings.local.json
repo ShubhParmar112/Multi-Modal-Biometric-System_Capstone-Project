@@ -92,7 +92,14 @@
       "Bash(curl -s -X DELETE http://localhost:8000/api/portfolio/holdings/SUZLON.NS -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(./venv/Scripts/python.exe -m scripts.nightly_prices)"
+      "Bash(./venv/Scripts/python.exe -m scripts.nightly_prices)",
+      "Bash(python \"/c/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/7ea1adc5-2c98-4aea-8787-f93a1df4334b/scratchpad/check_email_equiv.py\")",
+      "Bash(python -m tests.test_ticker_search)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''\\); import tests; print\\(tests.__file__\\)\")",
+      "Bash(PYTHONPATH=. python tests/test_ticker_search.py)",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" http://127.0.0.1:8000/api/health)",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" -X POST http://127.0.0.1:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"card_number\":\"0000000000000000\",\"pin\":\"0000\"}')",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" -X POST http://127.0.0.1:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"user_id\":\"USR999\",\"pin\":\"0000\"}')"
     ]
   }
 }

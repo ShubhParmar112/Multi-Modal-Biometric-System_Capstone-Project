@@ -17,7 +17,7 @@ from typing import Optional, Callable
 
 import config
 from utils.logger import logger
-from auth.fusion_engine import FusionEngine, AuthStage, AuthResult
+from auth.fusion_engine import FusionEngine, AuthStage
 from face_recognition_module.face_recognizer import FaceRecognizer
 from face_recognition_module.liveness_detector import LivenessDetector
 from database.db_manager import DatabaseManager
@@ -477,7 +477,6 @@ class ATMInterface:
         Execute the full authentication pipeline with UI updates.
         This runs in a background thread.
         """
-        result = AuthResult()
         start_time = time.time()
 
         try:

@@ -7,7 +7,6 @@ Returns user_id, confidence score, and face location.
 import cv2
 import numpy as np
 import pickle
-import time
 from typing import Optional, Tuple, Dict, List
 
 import config
@@ -165,105 +164,6 @@ class FaceRecognizer:
         self._last_result = result
         return result
 
-    def recognize_with_timeout(self, timeout: int = 10,
-                               required_confirmations: int = 5) -> Tuple[
-            Optional[str], float]:
-        """
-        Run real-time recognition with webcam until a user is confirmed
-        or timeout is reached.
-
-        Args:
-            timeout: Maximum seconds to attempt recognition
-            required_confirmations: Number of consecutive matches needed
-
-        Returns:
-            Tuple of (user_id or None, average confidence)
-        """
-        cap = cv2.VideoCapture(config.CAMERA_INDEX)
-        if not cap.isOpened():
-            logger.error("Cannot open webcam for recognition")
-            return None, 0.0
-
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
-
-        logger.info(f"Starting face recognition (timeout: {timeout}s)")
-
-        start_time = time.time()
-        confirmations: Dict[str, List[float]] = {}
-        recognized_user = None
-        avg_confidence = 0.0
-
-        while time.time() - start_time < timeout:
-            ret, frame = cap.read()
-            if not ret:
-                continue
-
-            self.frame_count += 1
-
-            if self.frame_count % config.FACE_FRAME_SKIP != 0:
-                cv2.imshow("Face Recognition", frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-                continue
-
-            user_id, confidence, face_loc = self.recognize_from_frame(frame)
-            display = frame.copy()
-
-            if face_loc:
-                top, right, bottom, left = face_loc
-                if user_id:
-                    cv2.rectangle(display, (left, top), (right, bottom),
-                                  (0, 212, 170), 2)
-                    label = f"{user_id} ({confidence:.1%})"
-                    cv2.putText(display, label, (left, top - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                                (0, 212, 170), 2)
-
-                    if user_id not in confirmations:
-                        confirmations[user_id] = []
-                    confirmations[user_id].append(confidence)
-
-                    if len(confirmations[user_id]) >= required_confirmations:
-                        recognized_user = user_id
-                        avg_confidence = float(
-                            np.mean(confirmations[user_id])
-                        )
-                        break
-                else:
-                    cv2.rectangle(display, (left, top), (right, bottom),
-                                  (0, 0, 233), 2)
-                    cv2.putText(display, f"Unknown ({confidence:.1%})",
-                                (left, top - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                                (0, 0, 233), 2)
-
-            elapsed = time.time() - start_time
-            remaining = max(0, timeout - elapsed)
-            cv2.rectangle(display, (0, 0), (display.shape[1], 35),
-                          (26, 26, 46), -1)
-            cv2.putText(display,
-                        f"Scanning... Time remaining: {remaining:.0f}s",
-                        (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                        (0, 212, 170), 1)
-
-            cv2.imshow("Face Recognition", display)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-        if recognized_user:
-            logger.success(
-                f"Face recognized: {recognized_user} "
-                f"(confidence: {avg_confidence:.1%})"
-            )
-        else:
-            logger.warning("Face recognition timed out or no match found")
-
-        return recognized_user, float(avg_confidence)
-
     def annotate_frame(self, frame: np.ndarray) -> np.ndarray:
         """Draw the most recent recognition result onto a frame without
         running any inference — cheap enough for the UI thread at 30 FPS."""
@@ -278,47 +178,3 @@ class FaceRecognizer:
         cv2.putText(frame, label, (left + 2, top - 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
         return frame
-
-    def get_frame_with_recognition(self, frame: np.ndarray) -> Tuple[
-            np.ndarray, Optional[str], float]:
-        """
-        Process a frame and return the annotated frame along with
-        recognition results. Used by the UI for live camera feed.
-
-        Skipped frames reuse the last recognition result for the overlay,
-        so the video stays smooth while inference runs every Nth frame.
-
-        Returns:
-            Tuple of (annotated_frame, user_id or None, confidence)
-        """
-        self.frame_count += 1
-        display = frame.copy()
-
-        if self.frame_count % config.FACE_FRAME_SKIP != 0:
-            return self.annotate_frame(display), None, 0.0
-
-        user_id, confidence, face_loc = self.recognize_from_frame(frame)
-
-        if face_loc:
-            top, right, bottom, left = face_loc
-            if user_id:
-                color = (0, 212, 170)
-                label = f"{user_id} ({confidence:.1%})"
-            else:
-                color = (0, 0, 233)
-                label = f"Unknown ({confidence:.1%})"
-
-            cv2.rectangle(display, (left, top), (right, bottom), color, 2)
-
-            label_size = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
-            cv2.rectangle(
-                display,
-                (left, top - label_size[1] - 10),
-                (left + label_size[0] + 5, top),
-                color, -1
-            )
-            cv2.putText(display, label, (left + 2, top - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
-        return display, user_id, confidence

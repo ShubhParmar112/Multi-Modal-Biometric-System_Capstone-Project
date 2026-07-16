@@ -12,6 +12,7 @@ from typing import List
 from groq import Groq
 
 import config
+from analytics.reports import _shift_month
 from database.db_manager import DatabaseManager
 from portfolio.service import PortfolioService
 from utils.logger import logger
@@ -44,11 +45,6 @@ def _get_client():
 
 def _month_key(ts: str) -> str:
     return ts[:7]
-
-
-def _shift_month(year: int, month: int, delta: int):
-    idx = year * 12 + (month - 1) + delta
-    return idx // 12, idx % 12 + 1
 
 
 def _build_context(user_id: str, db: DatabaseManager) -> str:
