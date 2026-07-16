@@ -154,6 +154,13 @@ def list_holdings(user=Depends(get_effective_user),
     return service.list_holdings(user["user_id"])
 
 
+@router.get("/summary")
+def portfolio_summary(user=Depends(get_effective_user),
+                      service: HoldingsService = Depends(get_holdings_service)):
+    """Compact snapshot for the dashboard invest card."""
+    return service.portfolio_summary(user["user_id"])
+
+
 def _fetch_prices_if_missing(service: HoldingsService, user_id: str,
                              ticker: str, background_tasks: BackgroundTasks):
     """Queue a background close-price fetch for a ticker with nothing in

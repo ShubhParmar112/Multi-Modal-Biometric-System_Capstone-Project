@@ -102,6 +102,63 @@ class HoldingsService:
     def list_holdings(self, user_id: str) -> List[dict]:
         return self.db.get_holdings(user_id)
 
+    def portfolio_summary(self, user_id: str, spark_days: int = 30) -> dict:
+        """Compact snapshot for the dashboard invest card: total value,
+        1-day change, top holding, and a total-value sparkline built from
+        stored closes (holdings without history are valued flat at their
+        buy price so they can't distort the day change)."""
+        holdings = self.db.get_holdings(user_id)
+        if not holdings:
+            return {"status": "empty"}
+
+        histories = {}
+        dated = set()
+        for h in holdings:
+            rows = self.db.get_price_history(h["ticker"], days=spark_days)
+            histories[h["ticker"]] = {r["price_date"]: r["close_price"]
+                                      for r in rows}
+            if rows:
+                dated.update(histories[h["ticker"]])
+
+        # Dates where every holding WITH history has a close; each series
+        # carries its last known close forward for any gaps.
+        spark = []
+        invested = sum(h["quantity"] * h["avg_buy_price"] for h in holdings)
+        for d in sorted(dated):
+            total = 0.0
+            for h in holdings:
+                hist = histories[h["ticker"]]
+                past = [k for k in hist if k <= d]
+                price = hist[max(past)] if past else h["avg_buy_price"]
+                total += h["quantity"] * price
+            spark.append(round(total, 2))
+
+        value = spark[-1] if spark else round(invested, 2)
+        prev = spark[-2] if len(spark) >= 2 else value
+        day_change = round(value - prev, 2)
+
+        def latest_price(h):
+            hist = histories[h["ticker"]]
+            return list(hist.values())[-1] if hist else h["avg_buy_price"]
+
+        top = max(holdings, key=lambda h: h["quantity"] * latest_price(h))
+        top_value = top["quantity"] * latest_price(top)
+
+        return {
+            "status": "ok",
+            "value": round(value, 2),
+            "invested": round(invested, 2),
+            "day_change": day_change,
+            "day_change_pct": round(day_change / prev * 100, 2) if prev else 0.0,
+            "holdings_count": len(holdings),
+            "top_holding": {
+                "ticker": top["ticker"],
+                "name": top["name"],
+                "share_pct": round(top_value / value * 100, 1) if value else 0.0,
+            },
+            "spark": spark,
+        }
+
     def upsert_holding(self, user_id: str, ticker: str, quantity: float,
                        avg_buy_price: float, name: str = None) -> dict:
         ticker = ticker.strip().upper()

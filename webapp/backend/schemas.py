@@ -1,6 +1,6 @@
 """Pydantic request/response models for the SmartBank API."""
 
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 
 
@@ -51,6 +51,16 @@ class TokenResponse(BaseModel):
     name: str
 
 
+class CardSummary(BaseModel):
+    card_type: str  # "debit" | "credit"
+    number_masked: str  # masked server-side: first 4 + last 4 digits only
+    expiry: Optional[str] = None
+    status: Optional[str] = None
+    credit_limit: Optional[float] = None  # credit cards only
+    outstanding: Optional[float] = None
+    due_date: Optional[str] = None  # e.g. "05 Aug"
+
+
 class AccountResponse(BaseModel):
     account_id: str
     account_number: str
@@ -58,10 +68,7 @@ class AccountResponse(BaseModel):
     balance: float
     currency: str
     status: str
-    # Linked debit card, masked server-side (first 4 + last 4 digits only).
-    card_number_masked: Optional[str] = None
-    card_expiry: Optional[str] = None
-    card_status: Optional[str] = None
+    cards: List[CardSummary] = []
 
 
 class DepositRequest(BaseModel):

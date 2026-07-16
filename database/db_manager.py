@@ -9,6 +9,7 @@ import os
 import pickle
 import random
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 import config
@@ -260,6 +261,50 @@ class DatabaseManager:
                           conn.execute("PRAGMA table_info(daily_prices)").fetchall()}
             if "volume" not in price_cols:
                 conn.execute("ALTER TABLE daily_prices ADD COLUMN volume REAL")
+
+            # Migration: split cards into debit/credit. Cards issued before the
+            # split become the account's credit card (with a default limit);
+            # every account then gets a fresh debit card issued below.
+            card_cols = {row[1] for row in
+                         conn.execute("PRAGMA table_info(cards)").fetchall()}
+            if "card_type" not in card_cols:
+                conn.execute(
+                    "ALTER TABLE cards ADD COLUMN card_type TEXT DEFAULT 'debit'"
+                )
+                conn.execute("UPDATE cards SET card_type = 'credit'")
+            if "credit_limit" not in card_cols:
+                conn.execute("ALTER TABLE cards ADD COLUMN credit_limit REAL")
+                conn.execute(
+                    "UPDATE cards SET credit_limit = 100000 "
+                    "WHERE card_type = 'credit'"
+                )
+            if "outstanding" not in card_cols:
+                conn.execute(
+                    "ALTER TABLE cards ADD COLUMN outstanding REAL DEFAULT 0"
+                )
+
+            # Issue a debit card for any account that doesn't have one yet.
+            missing_debit = conn.execute("""
+                SELECT a.account_id, a.user_id FROM accounts a
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM cards c
+                    WHERE c.account_id = a.account_id
+                      AND c.card_type = 'debit'
+                )
+            """).fetchall()
+            if missing_debit:
+                now = datetime.now()
+                expiry = f"{now.month:02d}/{(now.year + 5) % 100:02d}"
+                for acc in missing_debit:
+                    conn.execute(
+                        """INSERT INTO cards (card_number, account_id, user_id,
+                           expiry_date, cvv_hash, card_type)
+                           VALUES (?, ?, ?, ?, ?, 'debit')""",
+                        (self._unique_card_number(conn), acc["account_id"],
+                         acc["user_id"], expiry,
+                         self._hash_pin(f"{random.randint(0, 999):03d}"))
+                    )
+                logger.info(f"Issued {len(missing_debit)} debit card(s)")
 
             # Seed default categories once.
             count = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
@@ -567,22 +612,27 @@ class DatabaseManager:
 
     # ── Cards ─────────────────────────────────────────────────
 
+    @staticmethod
+    def _unique_card_number(conn) -> str:
+        """Generate a 16-digit Luhn-valid card number unique on `conn`."""
+        while True:
+            base = "".join(str(random.randint(0, 9)) for _ in range(15))
+            digits = [int(d) for d in base] + [0]
+            odd_sum = sum(digits[-1::-2])
+            even_sum = sum(sum(divmod(d * 2, 10)) for d in digits[-2::-2])
+            check_digit = (10 - (odd_sum + even_sum) % 10) % 10
+            card_number = base + str(check_digit)
+
+            exists = conn.execute(
+                "SELECT 1 FROM cards WHERE card_number = ?", (card_number,)
+            ).fetchone()
+            if not exists:
+                return card_number
+
     def generate_card_number(self) -> str:
         """Generate a unique 16-digit Luhn-valid card number."""
         with self._conn() as conn:
-            while True:
-                base = "".join(str(random.randint(0, 9)) for _ in range(15))
-                digits = [int(d) for d in base] + [0]
-                odd_sum = sum(digits[-1::-2])
-                even_sum = sum(sum(divmod(d * 2, 10)) for d in digits[-2::-2])
-                check_digit = (10 - (odd_sum + even_sum) % 10) % 10
-                card_number = base + str(check_digit)
-
-                exists = conn.execute(
-                    "SELECT 1 FROM cards WHERE card_number = ?", (card_number,)
-                ).fetchone()
-                if not exists:
-                    return card_number
+            return self._unique_card_number(conn)
 
     def create_card(self, account_id: str, user_id: str, expiry_date: str,
                     cvv: str) -> Optional[str]:
