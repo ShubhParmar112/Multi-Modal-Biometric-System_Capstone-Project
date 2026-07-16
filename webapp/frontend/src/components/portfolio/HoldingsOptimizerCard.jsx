@@ -84,7 +84,15 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
     );
   }
 
-  const pieData = data.allocation
+  // One stable color per ticker so both pies (and the legend) stay in sync.
+  const colorByName = {};
+  data.allocation.forEach((a, i) => {
+    colorByName[short(a.ticker)] = COLORS[i % COLORS.length];
+  });
+  const currentPieData = data.allocation
+    .filter((a) => a.current_weight_pct > 0)
+    .map((a) => ({ name: short(a.ticker), value: a.current_weight_pct }));
+  const targetPieData = data.allocation
     .filter((a) => a.target_weight_pct > 0)
     .map((a) => ({ name: short(a.ticker), value: a.target_weight_pct }));
   const corr = data.correlation;
@@ -133,21 +141,47 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
           </div>
         </div>
 
-        <div className="grid-2" style={{ alignItems: "center" }}>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart margin={{ top: 24, bottom: 8, left: 8, right: 8 }}>
-              <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={90}
-                label={({ name, value }) => `${name}: ${value}%`}>
-                {pieData.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v) => `${v}%`} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="grid-2" style={{ alignItems: "stretch", marginBottom: 16 }}>
+          <div className="card" style={{ margin: 0 }}>
+            <p className="muted" style={{
+              textAlign: "center", margin: "8px 0 0", fontSize: 12,
+              textTransform: "uppercase", letterSpacing: 0.6,
+            }}>Current Holdings</p>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart margin={{ top: 24, bottom: 8, left: 8, right: 8 }}>
+                <Pie data={currentPieData} dataKey="value" nameKey="name" outerRadius={90}
+                  label={({ name, value }) => `${name}: ${value}%`}>
+                  {currentPieData.map((d, i) => (
+                    <Cell key={i} fill={colorByName[d.name]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v) => `${v}%`} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
 
-          <div style={{ overflowX: "auto" }}>
+          <div className="card" style={{ margin: 0 }}>
+            <p className="muted" style={{
+              textAlign: "center", margin: "8px 0 0", fontSize: 12,
+              textTransform: "uppercase", letterSpacing: 0.6,
+            }}>Optimized Target</p>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart margin={{ top: 24, bottom: 8, left: 8, right: 8 }}>
+                <Pie data={targetPieData} dataKey="value" nameKey="name" outerRadius={90}
+                  label={({ name, value }) => `${name}: ${value}%`}>
+                  {targetPieData.map((d, i) => (
+                    <Cell key={i} fill={colorByName[d.name]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v) => `${v}%`} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
             <table className="table">
               <thead>
                 <tr>
@@ -173,7 +207,6 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
                 ))}
               </tbody>
             </table>
-          </div>
         </div>
       </div>
 

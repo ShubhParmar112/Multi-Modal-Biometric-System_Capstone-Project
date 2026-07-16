@@ -58,6 +58,10 @@ class AccountResponse(BaseModel):
     balance: float
     currency: str
     status: str
+    # Linked debit card, masked server-side (first 4 + last 4 digits only).
+    card_number_masked: Optional[str] = None
+    card_expiry: Optional[str] = None
+    card_status: Optional[str] = None
 
 
 class DepositRequest(BaseModel):

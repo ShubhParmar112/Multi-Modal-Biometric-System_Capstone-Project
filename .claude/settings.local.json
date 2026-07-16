@@ -99,7 +99,11 @@
       "Bash(PYTHONPATH=. python tests/test_ticker_search.py)",
       "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" http://127.0.0.1:8000/api/health)",
       "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" -X POST http://127.0.0.1:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"card_number\":\"0000000000000000\",\"pin\":\"0000\"}')",
-      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" -X POST http://127.0.0.1:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"user_id\":\"USR999\",\"pin\":\"0000\"}')"
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" -X POST http://127.0.0.1:8000/api/auth/login -H \"Content-Type: application/json\" -d '{\"user_id\":\"USR999\",\"pin\":\"0000\"}')",
+      "Bash(./venv/Scripts/python.exe -c \"from webapp.backend.auth import create_access_token; print\\(create_access_token\\('USR001'\\)\\)\")",
+      "Bash(curl -s http://127.0.0.1:8000/api/accounts/me -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget"
     ]
   }
 }

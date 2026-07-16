@@ -32,7 +32,7 @@ from utils.logger import logger
 
 # Shared design system — palette + icon renderer from the ATM dashboard.
 from ui.banking_interface import (
-    _blend, _draw_icon, _fmt,
+    _blend, _draw_icon,
     BG, CARD, CARD_HV, ACCENT, ACCENT_HV, DANGER, TEXT, MUTED,
     HEADER_BG, PANEL_DK, BORDER, PANEL_CARD,
     COL_WITHDRAW, COL_DEPOSIT, COL_TRANSFER, COL_STATEMENT, COL_PIN, COL_EXIT,
@@ -545,9 +545,16 @@ class BankerInterface:
 
     @staticmethod
     def _group_card(number) -> str:
-        """1234567890123456 → 1234 5678 9012 3456"""
+        """1234567890123456 → XXXX XXXX XXXX 3456 (last 4 digits visible)"""
         s = str(number or "")
+        if s:
+            s = "X" * max(len(s) - 4, 0) + s[-4:]
         return " ".join(s[i:i + 4] for i in range(0, len(s), 4)) or "N/A"
+
+    @staticmethod
+    def _mask_balance(balance: float) -> str:
+        """25050.0 → '*****' (one star per digit of the integer amount)."""
+        return "*" * len(str(int(balance)))
 
     def _detail_cell(self, parent, label: str, value: str,
                      value_color=None, mono=False, sub=None, sub_color=None):
@@ -640,7 +647,7 @@ class BankerInterface:
             )
             self._detail_cell(
                 detail, "Balance",
-                _fmt(float(account.get("balance") or 0)),
+                self._mask_balance(float(account.get("balance") or 0)),
                 value_color=ACCENT, sub="available"
             )
         else:
