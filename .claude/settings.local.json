@@ -103,7 +103,8 @@
       "Bash(./venv/Scripts/python.exe -c \"from webapp.backend.auth import create_access_token; print\\(create_access_token\\('USR001'\\)\\)\")",
       "Bash(curl -s http://127.0.0.1:8000/api/accounts/me -H 'Authorization: Bearer __TRACKED_VAR__')",
       "mcp__visualize__read_me",
-      "mcp__visualize__show_widget"
+      "mcp__visualize__show_widget",
+      "Bash(curl -s \"http://localhost:5173/src/components/portfolio/HoldingsOptimizerCard.jsx\")"
     ]
   }
 }

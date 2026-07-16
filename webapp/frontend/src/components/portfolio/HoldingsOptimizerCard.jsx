@@ -27,6 +27,17 @@ function cellColor(v) {
 
 function short(ticker) { return ticker.replace(".NS", ""); }
 
+// Compact pie label (12px, same as the app's other chart text) so long
+// "TICKER: xx.xx%" strings fit inside the half-width chart cards.
+function renderPieLabel({ x, y, textAnchor, fill, name, value }) {
+  return (
+    <text x={x} y={y} textAnchor={textAnchor} fill={fill}
+      fontSize={12} dominantBaseline="central">
+      {`${name}: ${value}%`}
+    </text>
+  );
+}
+
 // Optimizer over the user's REAL holdings: target weights from stored
 // price history (max-Sharpe, per-holding weight cap), a live investment
 // plan for any amount, and the holdings correlation heatmap.
@@ -120,7 +131,7 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
             ` Excluded for missing history: ${data.excluded.map(short).join(", ")}.`}
         </p>
 
-        <div className="grid-3" style={{ marginBottom: 4 }}>
+        <div className="grid-3" style={{ marginBottom: 20 }}>
           <div className="card" style={{ textAlign: "center", margin: 0 }}>
             <p className="muted" style={{ margin: "0 0 4px" }}>Expected Annual Return</p>
             <div style={{ fontSize: 26, fontWeight: 700, color: "var(--primary)" }}>
@@ -141,7 +152,7 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
           </div>
         </div>
 
-        <div className="grid-2" style={{ alignItems: "stretch", marginBottom: 16 }}>
+        <div className="grid-2" style={{ alignItems: "stretch", marginBottom: 20 }}>
           <div className="card" style={{ margin: 0 }}>
             <p className="muted" style={{
               textAlign: "center", margin: "8px 0 0", fontSize: 12,
@@ -150,7 +161,7 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart margin={{ top: 24, bottom: 8, left: 8, right: 8 }}>
                 <Pie data={currentPieData} dataKey="value" nameKey="name" outerRadius={90}
-                  label={({ name, value }) => `${name}: ${value}%`}>
+                  label={renderPieLabel}>
                   {currentPieData.map((d, i) => (
                     <Cell key={i} fill={colorByName[d.name]} />
                   ))}
@@ -169,7 +180,7 @@ export default function HoldingsOptimizerCard({ defaultAmount }) {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart margin={{ top: 24, bottom: 8, left: 8, right: 8 }}>
                 <Pie data={targetPieData} dataKey="value" nameKey="name" outerRadius={90}
-                  label={({ name, value }) => `${name}: ${value}%`}>
+                  label={renderPieLabel}>
                   {targetPieData.map((d, i) => (
                     <Cell key={i} fill={colorByName[d.name]} />
                   ))}
