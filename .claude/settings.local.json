@@ -108,7 +108,11 @@
       "Bash(curl -s http://127.0.0.1:8000/api/portfolio/holdings -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
       "Bash(curl -s -m 5 http://127.0.0.1:8000/api/health)",
       "PowerShell($conns = Get-NetTCPConnection -LocalPort 8000,5173 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | ForEach-Object { $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; \"$\\($_.LocalPort\\) -> PID $\\($_.OwningProcess\\) \\($\\($p.ProcessName\\)\\)\" } } else { \"ports free\" })",
-      "Bash(curl -s http://127.0.0.1:8000/api/portfolio/summary -H 'Authorization: Bearer __TRACKED_VAR__')"
+      "Bash(curl -s http://127.0.0.1:8000/api/portfolio/summary -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(git -C \"C:/Users/Shubh Parmar/Desktop/NMIMS/YEAR 5/Semester X/COMPUTER VISION & APPLICATION \\(CVA\\)/Project/Project/Biometric_ATM System/Final/Final\" status --short)",
+      "Bash(python -c ' *)",
+      "Bash(git show *)",
+      "Bash(git restore *)"
     ]
   }
 }
