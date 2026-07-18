@@ -23,12 +23,15 @@ class SerialHandler:
         NO_MATCH                    → No fingerprint match
         ENROLL_OK:<fingerprint_id>  → Enrollment successful
         ENROLL_FAIL                 → Enrollment failed
+        DELETE_OK:<fingerprint_id>  → Template deletion successful
+        DELETE_FAIL                 → Template deletion failed
         SENSOR_ERROR                → Sensor communication error
         READY                       → ESP32 ready for commands
 
     Protocol (Python → ESP32):
         SCAN                        → Request fingerprint scan
         ENROLL:<fingerprint_id>     → Start enrollment for given ID
+        DELETE:<fingerprint_id>     → Delete stored template for given ID
         STATUS                      → Request sensor status
     """
 
@@ -271,6 +274,45 @@ class SerialHandler:
             time.sleep(0.1)
 
         logger.warning("Enrollment timed out")
+        return False
+
+    def request_deletion(self, fingerprint_id: int,
+                         timeout: float = 10) -> bool:
+        """
+        Request deletion of a stored fingerprint template on the sensor.
+
+        Args:
+            fingerprint_id: ID of the template to erase (1-127 for R307S)
+            timeout: Max seconds to wait for the sensor's response
+
+        Returns:
+            True if the template was deleted successfully
+        """
+        if config.SIMULATION_MODE:
+            logger.info(f"SIMULATION: Deleted fingerprint ID {fingerprint_id}")
+            return True
+
+        if not self.send_command(f"DELETE:{fingerprint_id}"):
+            return False
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            response = self.read_response(timeout=1.0)
+            if response:
+                if response.startswith("DELETE_OK"):
+                    logger.success(
+                        f"Fingerprint template deleted: ID {fingerprint_id}")
+                    return True
+                elif response == "DELETE_FAIL":
+                    logger.error(
+                        f"Sensor failed to delete template ID {fingerprint_id}")
+                    return False
+                elif response == "SENSOR_ERROR":
+                    logger.error("Fingerprint sensor error during deletion")
+                    return False
+            time.sleep(0.1)
+
+        logger.warning("Fingerprint deletion timed out")
         return False
 
     @staticmethod

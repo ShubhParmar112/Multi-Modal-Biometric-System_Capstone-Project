@@ -544,8 +544,8 @@ class DatabaseManager:
         try:
             with self._conn(commit=True) as conn:
                 conn.execute(
-                    """UPDATE users SET is_active = 0, face_encoding = NULL
-                       WHERE user_id = ?""",
+                    """UPDATE users SET is_active = 0, face_encoding = NULL,
+                       fingerprint_id = NULL WHERE user_id = ?""",
                     (user_id,)
                 )
             logger.info(f"User deactivated: {user_id}")

@@ -682,6 +682,7 @@ class BankerInterface:
             text=(f"Remove  {name}  ({user_id})?\n\n"
                   "•  the user can no longer authenticate at the ATM\n"
                   "•  face images and encodings are permanently deleted\n"
+                  "•  the fingerprint template is erased from the sensor\n"
                   "•  accounts and transaction history are preserved\n"
                   "•  re-enrollment is required to restore access"),
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=13),
@@ -702,21 +703,50 @@ class BankerInterface:
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=13, weight="bold"),
             fg_color=DANGER, hover_color="#C0392B", text_color="white",
             height=42, corner_radius=10,
-            command=lambda: self._remove_user(user_id, name)
+            command=lambda: self._remove_user(user_id, name,
+                                              user.get("fingerprint_id"))
         ).pack(side="left", expand=True, fill="x", padx=(6, 0))
 
-    def _remove_user(self, user_id: str, name: str):
+    def _remove_user(self, user_id: str, name: str,
+                     fingerprint_id: Optional[int] = None):
         if self.db.delete_user(user_id):
             from face_recognition_module.face_encoder import FaceEncoder
             if not FaceEncoder().remove_user_data(user_id):
                 self._toast(f"Face data cleanup incomplete for {user_id}",
                             ok=False)
+            if fingerprint_id is not None:
+                threading.Thread(
+                    target=self._erase_fingerprint_template,
+                    args=(user_id, fingerprint_id), daemon=True
+                ).start()
             logger.system_event("Banker Console", f"User removed: {user_id}")
             self.count_label.configure(text=str(len(self.db.get_all_users())))
             self._do_users()                  # refreshed list
             self._toast(f"{name} ({user_id}) removed")
         else:
             self._toast(f"Could not remove {user_id}", ok=False)
+
+    def _erase_fingerprint_template(self, user_id: str, fingerprint_id: int):
+        """Erase the user's template from the R307S (background thread)."""
+        from fingerprint_module.serial_handler import SerialHandler
+        handler = SerialHandler(port=self.port_override)
+        ok = False
+        try:
+            if handler.connect():
+                ok = handler.request_deletion(fingerprint_id)
+                handler.disconnect()
+        except Exception as e:
+            logger.error(f"Sensor cleanup failed for {user_id}: {e}")
+        if ok:
+            logger.system_event(
+                "Banker Console",
+                f"Fingerprint template {fingerprint_id} erased ({user_id})")
+            msg, good = f"Fingerprint template erased from sensor", True
+        else:
+            msg = (f"Could not erase fingerprint {fingerprint_id} from "
+                   "sensor — check the ESP32 connection")
+            good = False
+        self.root.after(0, lambda: self._toast(msg, ok=good))
 
     def _do_ports(self):
         from fingerprint_module.serial_handler import SerialHandler
