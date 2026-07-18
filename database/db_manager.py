@@ -539,11 +539,13 @@ class DatabaseManager:
             return [dict(row) for row in rows]
 
     def delete_user(self, user_id: str) -> bool:
-        """Soft-delete a user by marking them inactive."""
+        """Soft-delete a user: mark inactive and drop their stored biometrics.
+        Accounts and transaction history are preserved; re-enrollment restores access."""
         try:
             with self._conn(commit=True) as conn:
                 conn.execute(
-                    "UPDATE users SET is_active = 0 WHERE user_id = ?",
+                    """UPDATE users SET is_active = 0, face_encoding = NULL
+                       WHERE user_id = ?""",
                     (user_id,)
                 )
             logger.info(f"User deactivated: {user_id}")

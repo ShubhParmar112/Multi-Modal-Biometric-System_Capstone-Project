@@ -6,6 +6,7 @@ for fast recognition at runtime.
 
 import os
 import pickle
+import shutil
 import cv2
 import numpy as np
 from typing import Dict, List, Optional
@@ -187,3 +188,45 @@ class FaceEncoder:
         if user_id not in self.known_encodings:
             self.known_encodings[user_id] = []
         self.known_encodings[user_id].append(encoding)
+
+    def remove_user_data(self, user_id: str) -> bool:
+        """
+        Delete all stored face data for a user: their dataset image folder
+        and every embedding of theirs in the encodings file.
+
+        Returns:
+            True if cleanup succeeded (also when there was nothing to delete)
+        """
+        ok = True
+
+        user_dir = os.path.join(config.DATASET_DIR, user_id)
+        if os.path.isdir(user_dir):
+            try:
+                shutil.rmtree(user_dir)
+                logger.info(f"Deleted dataset folder: {user_dir}")
+            except Exception as e:
+                logger.error(f"Failed to delete dataset folder for {user_id}: {e}")
+                ok = False
+
+        if os.path.exists(config.ENCODINGS_FILE):
+            try:
+                with open(config.ENCODINGS_FILE, "rb") as f:
+                    data = pickle.load(f)
+
+                ids = data.get("ids", [])
+                if user_id in ids or user_id in data.get("user_encodings", {}):
+                    keep = [i for i, uid in enumerate(ids) if uid != user_id]
+                    data["encodings"] = [data["encodings"][i] for i in keep]
+                    data["ids"] = [ids[i] for i in keep]
+                    data.get("user_encodings", {}).pop(user_id, None)
+
+                    with open(config.ENCODINGS_FILE, "wb") as f:
+                        pickle.dump(data, f)
+                    logger.info(f"Removed encodings for {user_id} "
+                                f"from {config.ENCODINGS_FILE}")
+            except Exception as e:
+                logger.error(f"Failed to purge encodings for {user_id}: {e}")
+                ok = False
+
+        self.known_encodings.pop(user_id, None)
+        return ok

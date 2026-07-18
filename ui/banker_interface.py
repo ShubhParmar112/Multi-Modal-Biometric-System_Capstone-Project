@@ -681,6 +681,7 @@ class BankerInterface:
             panel,
             text=(f"Remove  {name}  ({user_id})?\n\n"
                   "•  the user can no longer authenticate at the ATM\n"
+                  "•  face images and encodings are permanently deleted\n"
                   "•  accounts and transaction history are preserved\n"
                   "•  re-enrollment is required to restore access"),
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=13),
@@ -706,6 +707,10 @@ class BankerInterface:
 
     def _remove_user(self, user_id: str, name: str):
         if self.db.delete_user(user_id):
+            from face_recognition_module.face_encoder import FaceEncoder
+            if not FaceEncoder().remove_user_data(user_id):
+                self._toast(f"Face data cleanup incomplete for {user_id}",
+                            ok=False)
             logger.system_event("Banker Console", f"User removed: {user_id}")
             self.count_label.configure(text=str(len(self.db.get_all_users())))
             self._do_users()                  # refreshed list
