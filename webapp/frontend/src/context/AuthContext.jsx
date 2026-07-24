@@ -3,6 +3,19 @@ import client from "../api/client";
 
 const AuthContext = createContext(null);
 
+// A stable id for this browser, minted once and kept in localStorage. Adaptive
+// auth uses it to distinguish a returning device from a brand-new one. It is
+// not a secret and not a credential — just a "have I seen this browser" tag.
+function getDeviceId() {
+  let id = localStorage.getItem("smartbank_device_id");
+  if (!id) {
+    id = (crypto?.randomUUID?.() ||
+          `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    localStorage.setItem("smartbank_device_id", id);
+  }
+  return id;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const stored = localStorage.getItem("smartbank_user");
@@ -17,9 +30,16 @@ export function AuthProvider({ children }) {
   }
 
   async function login(userId, pin) {
-    const res = await client.post("/api/auth/login", { user_id: userId, pin });
-    // With 2FA enabled the PIN only earns a challenge — the caller must
-    // complete verifyTwoFactor() before a session exists.
+    const res = await client.post("/api/auth/login", {
+      user_id: userId,
+      pin,
+      // Stable per-browser id so adaptive auth can recognise a returning
+      // device and wave it through without a step-up.
+      device_id: getDeviceId(),
+    });
+    // Adaptive auth may decide the PIN alone isn't enough (new device, new
+    // network, odd hour…). Then the PIN only earns a challenge and the caller
+    // must complete verifyTwoFactor() before a session exists.
     if (res.data.requires_2fa) return res.data;
     storeSession(res.data);
     return res.data;

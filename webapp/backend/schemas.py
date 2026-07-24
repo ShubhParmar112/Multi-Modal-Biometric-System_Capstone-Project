@@ -7,6 +7,10 @@ from pydantic import BaseModel
 class LoginRequest(BaseModel):
     user_id: str
     pin: str
+    # Stable per-browser id (localStorage UUID) used by adaptive auth to tell
+    # a returning device from a brand-new one. Optional — absent means the
+    # session is treated as coming from an unknown device.
+    device_id: Optional[str] = None
 
 
 class FaceLoginRequest(BaseModel):

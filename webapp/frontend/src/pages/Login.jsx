@@ -65,8 +65,14 @@ export default function Login() {
     try {
       const data = await login(userId, pin);
       if (data.requires_2fa) {
-        // PIN accepted, but this account requires the Face ID second factor.
-        setTwoFa({ challenge_token: data.challenge_token, name: data.name });
+        // PIN accepted, but adaptive auth wants a Face ID second factor for
+        // this session. Carry the risk band + reasons so we can explain why.
+        setTwoFa({
+          challenge_token: data.challenge_token,
+          name: data.name,
+          risk_band: data.risk_band,
+          reasons: data.reasons || [],
+        });
         return;
       }
       navigate("/dashboard");
@@ -171,9 +177,22 @@ export default function Login() {
         {twoFa ? (
           <div>
             <p className="success-text" style={{ marginTop: 0 }}>
-              PIN accepted. Two-factor authentication is on for this account —
-              verify it's you with Face ID.
+              {twoFa.risk_band === "high"
+                ? "PIN accepted — but this sign-in looks higher-risk, so we need a clear Face ID match to be sure it's you."
+                : "PIN accepted. For extra security on this sign-in, verify it's you with Face ID."}
             </p>
+            {twoFa.reasons && twoFa.reasons.length > 0 && (
+              <div className="risk-reasons">
+                <span className="risk-reasons-label">
+                  Why the extra check:
+                </span>
+                <ul className="risk-reasons-list">
+                  {twoFa.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="face-video-wrap">
               {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
               <video ref={videoRef} autoPlay playsInline muted />

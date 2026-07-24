@@ -92,6 +92,43 @@ FRAUD_HIGH_RISK_THRESHOLD = 0.7
 FRAUD_BLOCK_HIGH_RISK = False           # default toggle state — logging only by default
 
 # ============================================================
+# ADAPTIVE (RISK-BASED) AUTHENTICATION SETTINGS
+# ============================================================
+# The "bouncer": a login-time risk score decides how many factors to demand,
+# instead of a static per-user 2FA toggle. Low risk -> PIN only; medium ->
+# PIN + Face; high -> PIN + Face at a stricter match threshold. Each signal
+# below contributes a weight to a 0-1 score; bands map the score to factors.
+#
+# Transparent, explainable rules (not ML) are deliberate here — a bouncer
+# that must *tell the user why* needs a score it can attribute to a reason.
+ADAPTIVE_AUTH_ENABLED = True
+
+# Score band cut-offs (score >= threshold selects the band).
+RISK_MEDIUM_BAND = 0.30              # >= this -> require Face as a 2nd factor
+RISK_HIGH_BAND = 0.60               # >= this -> Face at a stricter threshold
+
+# Per-signal weights (summed, then clamped to 1.0).
+RISK_W_NEW_DEVICE = 0.35            # login from a device we've never trusted
+RISK_W_NEW_LOCATION = 0.30         # login from an unseen IP subnet / network
+RISK_W_FAILED_ATTEMPTS = 0.30      # recent failed PIN logins for this user
+RISK_W_ODD_HOUR = 0.15             # login during the quiet overnight window
+RISK_W_DORMANT = 0.15              # account unused for a long stretch
+RISK_W_FIRST_LOGIN = 0.20          # no prior successful login on record
+
+# Signal parameters.
+RISK_FAILED_ATTEMPTS_WINDOW_MIN = 15   # look-back window for failed logins
+RISK_FAILED_ATTEMPTS_TRIGGER = 2       # this many failures fires the signal
+RISK_ODD_HOUR_START = 1                # 01:00 inclusive
+RISK_ODD_HOUR_END = 5                  # 05:00 exclusive (quiet overnight window)
+RISK_DORMANT_DAYS = 30                 # no login for this long counts as dormant
+RISK_DEVICE_TRUST_AFTER = 1            # successful logins before a device is "known"
+
+# High-risk sessions must clear a higher face-match confidence than the
+# routine floor (MIN_FACE_CONFIDENCE) — the "stricter ID check" for the 3 a.m.
+# stranger. Full webcam blink-liveness is the phase-2 upgrade for this band.
+RISK_HIGH_FACE_MIN_CONFIDENCE = 0.75
+
+# ============================================================
 # ANALYTICS SETTINGS
 # ============================================================
 ANALYTICS_OUTPUT_DIR = os.path.join(BASE_DIR, "analytics", "output")

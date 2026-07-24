@@ -112,7 +112,9 @@
       "Bash(git -C \"C:/Users/Shubh Parmar/Desktop/NMIMS/YEAR 5/Semester X/COMPUTER VISION & APPLICATION \\(CVA\\)/Project/Project/Biometric_ATM System/Final/Final\" status --short)",
       "Bash(python -c ' *)",
       "Bash(git show *)",
-      "Bash(git restore *)"
+      "Bash(git restore *)",
+      "Bash(./venv/Scripts/python.exe __TRACKED_VAR__/test_risk.py)",
+      "Bash(./venv/Scripts/python.exe -c 'import ipaddress as i; *)"
     ]
   }
 }

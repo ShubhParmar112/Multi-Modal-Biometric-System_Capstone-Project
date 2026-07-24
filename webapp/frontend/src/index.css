@@ -315,6 +315,36 @@ h2 {
   margin: 14px 0 0;
 }
 
+/* ── Adaptive-auth: "why the extra check" reasons ────────── */
+
+.risk-reasons {
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 4px 0 14px;
+}
+
+.risk-reasons-label {
+  display: block;
+  color: var(--warning);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+}
+
+.risk-reasons-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.risk-reasons-list li {
+  margin: 2px 0;
+}
+
 /* ── Debit-card hero (Dashboard) ─────────────────────────── */
 
 .bank-card-wrap {

@@ -12,15 +12,17 @@ token. Face ID login stays single-step — it is already a biometric factor.
 """
 
 import base64
+import hashlib
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 
 import config
+from auth.risk_engine import RiskEngine, location_key
 from database.db_manager import DatabaseManager
 from utils.logger import logger
 from webapp.backend.schemas import (
@@ -73,13 +75,41 @@ def get_db() -> DatabaseManager:
 
 
 def create_access_token(user_id: str, scope: str = None,
-                        minutes: int = None) -> str:
+                        minutes: int = None, extra: dict = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=minutes or config.JWT_EXPIRE_MINUTES)
     payload = {"sub": user_id, "exp": expire}
     if scope:
         payload["scope"] = scope
+    if extra:
+        payload.update(extra)
     return jwt.encode(payload, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
+
+
+def _client_ip(request: Optional[Request]) -> Optional[str]:
+    """Best-effort client IP: honour X-Forwarded-For (first hop) behind a
+    proxy, else the direct socket peer."""
+    if request is None:
+        return None
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+def _device_hash(device_id: Optional[str], ip: Optional[str],
+                 user_agent: Optional[str]) -> Optional[str]:
+    """Derive the stable device fingerprint the risk engine keys on.
+
+    A client-supplied device_id (localStorage UUID) is authoritative. When
+    it's missing we fall back to a hash of IP + User-Agent — weaker, but it
+    still separates obviously different clients. Returns None only when there
+    is nothing at all to fingerprint."""
+    basis = device_id or ((ip or "") + "|" + (user_agent or ""))
+    basis = basis.strip()
+    if not basis or basis == "|":
+        return None
+    return hashlib.sha256(basis.encode()).hexdigest()[:32]
 
 
 def get_current_user(token: str = Depends(oauth2_scheme),
@@ -143,31 +173,79 @@ def _decode_frame(image: str):
 
 
 @router.post("/login")
-def login(req: LoginRequest, db: DatabaseManager = Depends(get_db)):
+def login(req: LoginRequest, request: Request,
+          db: DatabaseManager = Depends(get_db)):
     user = db.get_user(req.user_id)
     if not user or not db.verify_pin(req.user_id, req.pin):
         db.log_auth_event(req.user_id or "UNKNOWN", "web_login", "failure",
                           "Invalid user ID or PIN")
         raise HTTPException(status_code=401, detail="Invalid user ID or PIN")
 
-    # With 2FA on, the PIN alone only earns a short-lived challenge token;
-    # the session JWT is issued by /face-verify after the biometric check.
-    if user.get("two_factor_enabled"):
-        db.log_auth_event(req.user_id, "web_login", "success",
-                          "PIN accepted — awaiting 2FA face verification")
-        challenge = create_access_token(req.user_id, scope="2fa_pending",
-                                        minutes=TWO_FA_CHALLENGE_MINUTES)
-        return {"requires_2fa": True, "challenge_token": challenge,
-                "user_id": req.user_id, "name": user["name"]}
+    # PIN is correct. Now the "bouncer": score the situation and decide how
+    # much more proof to demand. (If adaptive auth is off, fall back to the
+    # static per-user 2FA toggle.)
+    ip = _client_ip(request)
+    user_agent = request.headers.get("user-agent")
+    device_hash = _device_hash(req.device_id, ip, user_agent)
 
-    db.log_auth_event(req.user_id, "web_login", "success", "PIN login")
+    if config.ADAPTIVE_AUTH_ENABLED:
+        assessment = RiskEngine(db).assess_session(user, device_hash, ip)
+    else:
+        assessment = _legacy_assessment(user)
+
+    if assessment.requires_face:
+        # Face is required: the PIN only earns a short-lived challenge token.
+        # The session JWT is issued by /face-verify after the biometric check.
+        # Carry the risk context in the challenge so face-verify can apply the
+        # right strictness and record the device on success.
+        db.log_auth_event(
+            req.user_id, "web_login", "success",
+            f"PIN ok — risk={assessment.band} ({assessment.score}); "
+            f"stepping up to Face [{assessment.reasons_text()}]")
+        challenge = create_access_token(
+            req.user_id, scope="2fa_pending", minutes=TWO_FA_CHALLENGE_MINUTES,
+            extra={
+                "band": assessment.band,
+                "dev": device_hash,
+                "loc": assessment.location_key,
+                "mfc": assessment.min_face_confidence,
+                "rsn": assessment.reasons_text(),
+            })
+        return {"requires_2fa": True, "challenge_token": challenge,
+                "user_id": req.user_id, "name": user["name"],
+                "risk_band": assessment.band,
+                "reasons": assessment.reasons}
+
+    # Low risk: wave the regular through on the PIN alone. This is a full
+    # successful login, so it's the moment we trust the device + record the
+    # login context that future "new device / new location" checks read from.
+    db.log_auth_event(
+        req.user_id, "web_login", "success",
+        f"PIN login — risk={assessment.band} ({assessment.score})")
+    db.record_login_context(req.user_id, device_hash, ip,
+                            assessment.location_key, assessment.score,
+                            assessment.band, assessment.reasons_text())
+    db.record_device_seen(req.user_id, device_hash)
     db.update_last_login(req.user_id)
     token = create_access_token(req.user_id)
     return TokenResponse(access_token=token, user_id=req.user_id, name=user["name"])
 
 
+def _legacy_assessment(user: dict):
+    """Fallback when ADAPTIVE_AUTH_ENABLED is off: reproduce the old static
+    behaviour (Face required iff the user opted into 2FA)."""
+    from auth.risk_engine import FACTOR_FACE, FACTOR_PIN, RiskAssessment
+    if user.get("two_factor_enabled"):
+        return RiskAssessment(score=0.0, band="medium",
+                              required_factors=[FACTOR_PIN, FACTOR_FACE],
+                              reasons=["Two-factor is on for this account"])
+    return RiskAssessment(score=0.0, band="low",
+                          required_factors=[FACTOR_PIN])
+
+
 @router.post("/face-verify", response_model=TokenResponse)
-def face_verify(req: FaceVerifyRequest, db: DatabaseManager = Depends(get_db)):
+def face_verify(req: FaceVerifyRequest, request: Request,
+                db: DatabaseManager = Depends(get_db)):
     """Second factor for 2FA logins: verify that the webcam frame matches
     the user who just passed the PIN check, then issue the session JWT."""
     try:
@@ -179,6 +257,14 @@ def face_verify(req: FaceVerifyRequest, db: DatabaseManager = Depends(get_db)):
     if payload.get("scope") != "2fa_pending" or not payload.get("sub"):
         raise HTTPException(status_code=401, detail="Invalid 2FA challenge")
     expected_user_id = payload["sub"]
+
+    # Risk context carried from /login. High-risk sessions must clear a
+    # stricter face-match confidence than the routine floor.
+    band = payload.get("band", "medium")
+    device_hash = payload.get("dev")
+    loc_key = payload.get("loc")
+    min_face_confidence = payload.get("mfc", config.MIN_FACE_CONFIDENCE)
+    reasons = payload.get("rsn", "")
 
     frame = _decode_frame(req.image)
     if frame is None:
@@ -201,12 +287,29 @@ def face_verify(req: FaceVerifyRequest, db: DatabaseManager = Depends(get_db)):
         raise HTTPException(status_code=401,
                             detail="Face does not match this account")
 
+    # Stricter bar for high-risk sessions: a match that would pass routinely
+    # is not enough for the 3 a.m. stranger.
+    if confidence < min_face_confidence:
+        db.log_auth_event(
+            expected_user_id, "web_2fa_face", "failure",
+            f"confidence={confidence:.3f} below {band}-risk floor "
+            f"{min_face_confidence:.2f}")
+        raise HTTPException(
+            status_code=401,
+            detail="This looks like a higher-risk sign-in, so we need a "
+                   "clearer face match. Face the camera in good light and "
+                   "try again.")
+
     user = db.get_user(expected_user_id)
     if not user:
         raise HTTPException(status_code=401, detail="Face does not match this account")
 
+    # Full success: record the login context + trust this device now.
     db.log_auth_event(expected_user_id, "web_2fa_face", "success",
-                      f"confidence={confidence:.3f}")
+                      f"confidence={confidence:.3f} risk={band}")
+    db.record_login_context(expected_user_id, device_hash, _client_ip(request),
+                            loc_key, None, band, reasons)
+    db.record_device_seen(expected_user_id, device_hash)
     db.update_last_login(expected_user_id)
     token = create_access_token(expected_user_id)
     return TokenResponse(access_token=token, user_id=expected_user_id,

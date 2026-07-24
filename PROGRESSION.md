@@ -142,3 +142,34 @@ distance+voting confidence must also clear 60% before a user ID is returned.
 issues. Its removal simplifies `pip install -r requirements.txt` significantly.
 
 **Files changed:** `requirements.txt`
+
+---
+
+## 9. Adaptive (Risk-Based) Authentication — Web Login
+
+| | Before | After |
+|---|---|---|
+| **Second-factor trigger** | Static per-user 2FA toggle (`two_factor_enabled`) | Per-session risk score decides factors |
+| **Factors demanded** | Same for every login | Low risk → PIN only; medium → PIN + Face; high → PIN + Face at a stricter confidence bar |
+| **Signals used** | None | New device, new network (IP subnet), recent failed attempts, odd hour, dormant / first-ever login |
+| **User transparency** | — | Step-up screen lists *why* extra proof is required |
+
+**Why:** A fixed policy treats a ₹200 recharge from the user's own couch exactly
+like a ₹2,00,000 transfer from a new device abroad — either too much friction for
+regulars or too little scrutiny for strangers. The risk engine ("the bouncer")
+scores the situation of each login and scales friction to match, then explains
+the extra check. Scoring is transparent weighted rules (not ML) so every
+decision is attributable to a named reason. The existing PIN → Face challenge
+machinery is reused wholesale; only the *trigger* became dynamic.
+
+Location is derived from IP subnet (offline-friendly); true city/country geo +
+impossible-travel, keystroke-dynamics, and webcam blink-liveness for the high
+band are the planned phase-2 upgrades. The old static toggle still works as a
+floor (an opted-in user always gets at least a Face step) and as the fallback
+when `ADAPTIVE_AUTH_ENABLED` is off.
+
+**Files changed:** `auth/risk_engine.py` (new), `config.py`,
+`database/db_manager.py` (new `known_devices` + `login_context` tables),
+`webapp/backend/auth.py`, `webapp/backend/schemas.py`,
+`webapp/frontend/src/context/AuthContext.jsx`,
+`webapp/frontend/src/pages/Login.jsx`, `webapp/frontend/src/index.css`

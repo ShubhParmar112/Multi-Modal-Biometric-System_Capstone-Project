@@ -230,6 +230,37 @@ class DatabaseManager:
                     FOREIGN KEY (grantee_user_id) REFERENCES users(user_id)
                 )
             """)
+            # Adaptive auth: devices a user has successfully logged in from.
+            # trust_count lets us treat a device as "known" only after it has
+            # proven itself a few times (RISK_DEVICE_TRUST_AFTER).
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS known_devices (
+                    user_id      TEXT NOT NULL,
+                    device_hash  TEXT NOT NULL,
+                    trust_count  INTEGER NOT NULL DEFAULT 0,
+                    first_seen   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, device_hash),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
+            # Adaptive auth: one row per login-risk assessment. Feeds the
+            # "new location" signal (past IP subnets) and gives the auditor a
+            # per-login record of why extra factors were (or weren't) demanded.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS login_context (
+                    context_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id      TEXT NOT NULL,
+                    device_hash  TEXT,
+                    ip_address   TEXT,
+                    location_key TEXT,
+                    risk_score   REAL,
+                    risk_band    TEXT,
+                    reasons      TEXT,
+                    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            """)
 
             # Migration: add `category` to transactions if it doesn't exist yet
             # (CREATE TABLE IF NOT EXISTS won't retroactively add columns).
@@ -537,6 +568,82 @@ class DatabaseManager:
                     (limit,)
                 ).fetchall()
             return [dict(row) for row in rows]
+
+    # ── Adaptive authentication (risk signals) ────────────────
+
+    def get_known_device(self, user_id: str,
+                         device_hash: str) -> Optional[Dict[str, Any]]:
+        """Return the known_devices row for this user+device, or None."""
+        if not device_hash:
+            return None
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT * FROM known_devices
+                   WHERE user_id = ? AND device_hash = ?""",
+                (user_id, device_hash)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def record_device_seen(self, user_id: str, device_hash: str):
+        """Upsert a device: create it on first sight, else bump trust_count
+        and last_seen. Called only after a fully successful login."""
+        if not device_hash:
+            return
+        try:
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO known_devices (user_id, device_hash, trust_count)
+                       VALUES (?, ?, 1)
+                       ON CONFLICT(user_id, device_hash) DO UPDATE SET
+                           trust_count = trust_count + 1,
+                           last_seen = CURRENT_TIMESTAMP""",
+                    (user_id, device_hash)
+                )
+        except Exception as e:
+            logger.error(f"Failed to record device: {e}")
+
+    def record_login_context(self, user_id: str, device_hash: str,
+                             ip_address: str, location_key: str,
+                             risk_score: float, risk_band: str, reasons: str):
+        """Persist one login-risk assessment for audit + the location signal."""
+        try:
+            with self._conn(commit=True) as conn:
+                conn.execute(
+                    """INSERT INTO login_context (user_id, device_hash, ip_address,
+                       location_key, risk_score, risk_band, reasons)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (user_id, device_hash, ip_address, location_key,
+                     risk_score, risk_band, reasons)
+                )
+        except Exception as e:
+            logger.error(f"Failed to record login context: {e}")
+
+    def has_seen_location(self, user_id: str, location_key: str) -> bool:
+        """True if this user has logged in from this location before."""
+        if not location_key:
+            return True  # unknown location — don't punish what we can't measure
+        with self._conn() as conn:
+            row = conn.execute(
+                """SELECT 1 FROM login_context
+                   WHERE user_id = ? AND location_key = ? LIMIT 1""",
+                (user_id, location_key)
+            ).fetchone()
+            return row is not None
+
+    def count_recent_failed_logins(self, user_id: str,
+                                   within_minutes: int) -> int:
+        """Count failed web logins for a user inside the look-back window."""
+        with self._conn() as conn:
+            row = conn.execute(
+                # auth_logs.timestamp is written with CURRENT_TIMESTAMP (UTC),
+                # so the window must be computed in UTC too — no 'localtime'.
+                """SELECT COUNT(*) FROM auth_logs
+                   WHERE user_id = ? AND event_type = 'web_login'
+                     AND result = 'failure'
+                     AND timestamp >= datetime('now', ?)""",
+                (user_id, f"-{int(within_minutes)} minutes")
+            ).fetchone()
+            return row[0] if row else 0
 
     def delete_user(self, user_id: str) -> bool:
         """Soft-delete a user: mark inactive and drop their stored biometrics.
