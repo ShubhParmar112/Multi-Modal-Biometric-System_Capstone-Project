@@ -38,9 +38,56 @@ class FaceEncoder:
             logger.info("InsightFace buffalo_l model loaded")
         return self._app
 
-    def encode_dataset(self) -> bool:
+    def _encode_user_images(self, user_id: str, user_path: str,
+                            images: List[str]) -> List[np.ndarray]:
+        """Run the ArcFace model over one user's images. Returns their embeddings."""
+        app = self._get_app()
+        user_encodings: List[np.ndarray] = []
+
+        for img_name in images:
+            img_path = os.path.join(user_path, img_name)
+            try:
+                image = cv2.imread(img_path)
+                if image is None:
+                    logger.warning(f"Cannot read image: {img_name}")
+                    continue
+
+                rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                faces = app.get(rgb)
+
+                if len(faces) == 0:
+                    logger.warning(f"No face found in {img_name}")
+                    continue
+
+                if len(faces) > 1:
+                    logger.warning(
+                        f"Multiple faces in {img_name}, using largest"
+                    )
+                    faces = [max(
+                        faces,
+                        key=lambda f: (
+                            (f.bbox[2] - f.bbox[0]) *
+                            (f.bbox[3] - f.bbox[1])
+                        )
+                    )]
+
+                # 512-d L2-normalised ArcFace embedding
+                user_encodings.append(faces[0].normed_embedding)
+
+            except Exception as e:
+                logger.error(f"Error processing {img_path}: {e}")
+
+        return user_encodings
+
+    def encode_dataset(self, force: bool = False) -> bool:
         """
-        Process all images in the dataset directory and generate 512-d embeddings.
+        Generate 512-d embeddings for every user in the dataset directory.
+
+        ArcFace embeddings are deterministic, so users already present in the
+        encodings file (with a matching image count) are reused from cache
+        rather than re-encoded — only new or changed users hit the model. This
+        keeps enrollment fast as the dataset grows. Pass ``force=True`` to
+        re-encode everyone from scratch (e.g. after swapping the model).
 
         Expected directory structure:
             dataset/
@@ -64,10 +111,19 @@ class FaceEncoder:
             logger.error("No user directories found in dataset")
             return False
 
-        app = self._get_app()
-        all_encodings = []
-        all_ids = []
-        total_images = 0
+        # Load whatever is already encoded so we can reuse unchanged users.
+        cached: Dict[str, List[np.ndarray]] = {}
+        if not force and os.path.exists(config.ENCODINGS_FILE):
+            try:
+                with open(config.ENCODINGS_FILE, "rb") as f:
+                    cached = pickle.load(f).get("user_encodings", {})
+            except Exception as e:
+                logger.warning(f"Could not read cached encodings, re-encoding all: {e}")
+                cached = {}
+
+        self.known_encodings = {}
+        reused_users = 0
+        encoded_users = 0
         failed_images = 0
 
         for user_id in user_dirs:
@@ -79,58 +135,37 @@ class FaceEncoder:
                 logger.warning(f"No images found for user {user_id}")
                 continue
 
+            # Reuse cached embeddings when the image count is unchanged.
+            if user_id in cached and len(cached[user_id]) == len(images):
+                self.known_encodings[user_id] = cached[user_id]
+                reused_users += 1
+                logger.info(
+                    f"User {user_id}: reused {len(images)} cached embeddings"
+                )
+                continue
+
             logger.info(f"Encoding {len(images)} images for user: {user_id}")
-            user_encodings = []
-
-            for img_name in images:
-                img_path = os.path.join(user_path, img_name)
-                try:
-                    image = cv2.imread(img_path)
-                    if image is None:
-                        logger.warning(f"Cannot read image: {img_name}")
-                        failed_images += 1
-                        continue
-
-                    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                    faces = app.get(rgb)
-
-                    if len(faces) == 0:
-                        logger.warning(f"No face found in {img_name}")
-                        failed_images += 1
-                        continue
-
-                    if len(faces) > 1:
-                        logger.warning(
-                            f"Multiple faces in {img_name}, using largest"
-                        )
-                        faces = [max(
-                            faces,
-                            key=lambda f: (
-                                (f.bbox[2] - f.bbox[0]) *
-                                (f.bbox[3] - f.bbox[1])
-                            )
-                        )]
-
-                    # 512-d L2-normalised ArcFace embedding
-                    embedding = faces[0].normed_embedding
-                    user_encodings.append(embedding)
-                    all_encodings.append(embedding)
-                    all_ids.append(user_id)
-                    total_images += 1
-
-                except Exception as e:
-                    logger.error(f"Error processing {img_path}: {e}")
-                    failed_images += 1
+            user_encodings = self._encode_user_images(user_id, user_path, images)
+            failed_images += len(images) - len(user_encodings)
 
             if user_encodings:
                 self.known_encodings[user_id] = user_encodings
+                encoded_users += 1
                 logger.success(
                     f"User {user_id}: {len(user_encodings)} embeddings generated"
                 )
 
-        if not all_encodings:
+        if not self.known_encodings:
             logger.error("No valid encodings generated from dataset")
             return False
+
+        # Rebuild the flat parallel lists from the per-user map so they stay
+        # in sync (and users whose folders were deleted are dropped).
+        all_encodings: List[np.ndarray] = []
+        all_ids: List[str] = []
+        for user_id, encs in self.known_encodings.items():
+            all_encodings.extend(encs)
+            all_ids.extend([user_id] * len(encs))
 
         encoding_data = {
             "encodings": all_encodings,
@@ -143,9 +178,10 @@ class FaceEncoder:
             pickle.dump(encoding_data, f)
 
         logger.success(
-            f"Encodings saved: {total_images} faces from "
+            f"Encodings saved: {len(all_encodings)} faces from "
             f"{len(self.known_encodings)} users "
-            f"({failed_images} failed) → {config.ENCODINGS_FILE}"
+            f"({encoded_users} encoded, {reused_users} reused from cache, "
+            f"{failed_images} failed) -> {config.ENCODINGS_FILE}"
         )
         return True
 
