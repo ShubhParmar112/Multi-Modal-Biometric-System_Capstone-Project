@@ -114,7 +114,8 @@
       "Bash(git show *)",
       "Bash(git restore *)",
       "Bash(./venv/Scripts/python.exe __TRACKED_VAR__/test_risk.py)",
-      "Bash(./venv/Scripts/python.exe -c 'import ipaddress as i; *)"
+      "Bash(./venv/Scripts/python.exe -c 'import ipaddress as i; *)",
+      "Bash(python -c \"import pickle; d=pickle.load\\(open\\('encodings/face_encodings.pkl','rb'\\)\\); print\\(type\\(d\\)\\); print\\(d.keys\\(\\) if hasattr\\(d,'keys'\\) else 'no keys'\\)\")"
     ]
   }
 }
