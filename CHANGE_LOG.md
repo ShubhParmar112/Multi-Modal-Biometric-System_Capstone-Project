@@ -5,6 +5,84 @@ changed, how it was verified, and what was left undone.
 
 ---
 
+## 2026-08-02 — Liveness: stop counting "no face" as "eyes closed"
+
+**Problem.** `LivenessDetector._get_ear_from_frame` returned an eye-aspect
+ratio of `0.0` when MediaPipe found no face. Callers decide a blink has begun
+with `ear < EYE_AR_THRESH` (0.25), and `0.0 < 0.25`, so any frame without a
+face counted as a closed eye. Hold a photograph to the camera, cover the lens
+for two frames, uncover: that is one registered blink, and
+`LIVENESS_BLINK_REQUIRED` is 1. A hand defeated the anti-spoofing check.
+
+Confirmed empirically before changing anything — black, white and random-noise
+frames all reported `ear=0.0`, and the ATM's comparison evaluated True for all
+three.
+
+**Change.** "No face" is now `None`, which cannot be mistaken for a low EAR: a
+caller that forgets to handle it raises `TypeError` rather than silently
+passing. Degenerate landmarks (zero eye width) were a second source of a
+spurious `0.0` and return `None` too — unmeasurable is not "closed".
+
+The blink state machine moved out of the threaded Tkinter loop in
+`ui/atm_interface.py` onto `LivenessDetector.update_blink_state()`, so it
+exists once and is testable without a webcam. The ATM keeps the camera and the
+timeout; only the counting moved.
+
+**A face lost mid-blink discards the blink in progress.** A blink is "eyes
+closed, then open again, on a face we watched the whole time"; without the
+face we cannot attest the eyes reopened on a live person, and that gap is the
+attack. Cost: a user who turns away mid-blink must blink again.
+
+**Commits.**
+
+| Commit | Change |
+|:--|:--|
+| `32a0bbf` | Add failing smoke checks for the liveness no-face contract |
+| `b02a381` | Stop counting "no face" as "eyes closed" |
+| `11a1f76` | Add liveness regression tests, including the photograph case |
+
+**Verified** (no webcam; synthetic frames and enrolled stills):
+
+- Smoke test `liveness no-face contract` and `a still image cannot blink` both
+  failed before the fix and pass after — 13/13, 0 NEW. Both were removed from
+  the known-failure baseline so they now guard against regression.
+- `python -m tests.test_liveness` — 11 assertions pass.
+- The attack itself: photo + lens covered 2 frames → 0 blinks (was 1); covered
+  4 frames → 0; photo held still ×15 → 0. A real blink still counts 1.
+
+**NOT verified — needs a human at the machine.** No real face, real lighting,
+real printed photo, or video replay was tested. Run these at the ATM:
+
+1. `venv/Scripts/python.exe main.py`, authenticate normally, blink once →
+   must pass. Baseline behaviour must still work.
+2. Hold a printed or on-screen photo of an enrolled face to the camera, lens
+   uncovered → must fail with "Liveness check failed".
+3. Hold the photo, cover the lens ~2s, uncover, repeat 2–3× → **must still
+   fail.** This is the exact attack fixed here; before the fix it succeeded.
+4. Begin a real blink and turn away mid-blink → that blink must not count;
+   blink again to pass.
+5. Sit in dim light and blink several times → confirm a real user is not
+   locked out. If they are, the threshold needs revisiting.
+6. Check `logs/` for the liveness outcome of each run.
+
+**Deliberately deferred by the project owner (still open).**
+
+- **A still photograph still logs in over the web.** `/api/auth/face-login`
+  accepts one frame, matches it, and issues a full session JWT with no
+  liveness check of any kind. `/api/auth/face-verify` has the same
+  single-frame weakness but is PIN-gated first. Neither was changed in this
+  set; the decision on whether to remove passwordless face login or add burst
+  liveness was postponed. **This fix hardens the ATM path only.**
+- `/api/auth/face-login` also lacks the `MIN_FACE_CONFIDENCE` floor that
+  `/api/auth/face-verify` enforces.
+- `LIVENESS_BLINK_REQUIRED` is 1 ("lowered from 3 for convenience") while
+  `PROGRESSION.md` documents it as 3, and the ATM prompt reads "Blink 2
+  times". Left as-is by request; the docs still overstate the strength.
+- Even with this fix, blink detection does not defeat a video replay. Real
+  anti-spoofing needs depth, IR, or texture analysis this hardware lacks.
+
+---
+
 ## 2026-08-02 — Remove the committed JWT signing key
 
 **Problem.** `config.py` fell back to the constant
