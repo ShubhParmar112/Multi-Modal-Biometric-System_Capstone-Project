@@ -1,6 +1,18 @@
 # Pinned, known-good environment for the Multi-Modal Biometric Auth System.
 #
-#     pip install -r requirements.lock.txt
+#     pip install --no-deps -r requirements.lock.txt
+#
+# --no-deps IS REQUIRED. This file is the complete dependency closure (93
+# packages), so there is nothing for the resolver to solve — and if you let it
+# try, it FAILS. The source environment is not internally consistent by pip's
+# metadata: opencv 4.13 declares numpy>=2 while this stack pins numpy 1.26.4
+# (numpy 2.x breaks these compiled extensions). It runs fine — the ABI is
+# compatible in practice — but the resolver refuses it with
+# ResolutionImpossible. --no-deps places the pinned wheels and skips resolution.
+#
+# Verified 2026-08-02 by building a clean venv from this file: 93 packages
+# installed, smoke test 13/13, and InsightFace recognised an enrolled face at
+# 0.992 confidence.
 #
 # Generated 2026-08-02 from a working venv on
 # CPython 3.12.4 / Windows AMD64.
@@ -16,6 +28,11 @@
 # ship the same cv2 and overwrite each other, so pinning all three would leave
 # the resulting cv2 dependent on pip's install order. Contrib is the build
 # that actually loads here and is a superset of the other two.
+#
+# Consequence: albucore/albumentations name opencv-python-headless specifically,
+# so `pip check` reports it missing. Verified harmless — contrib supplies the
+# same cv2 module, and in the clean venv albumentations imports and the full
+# InsightFace recognition path runs.
 #
 # Regenerate after changing dependencies:
 #     python -m pip freeze > requirements.lock.txt

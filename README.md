@@ -132,8 +132,14 @@ try1/
 Reproduce the environment this project is known to work in (Windows,
 CPython 3.12):
 ```bash
-pip install -r requirements.lock.txt
+pip install --no-deps -r requirements.lock.txt
 ```
+
+`--no-deps` is required, not optional. The lock is the complete dependency
+closure, so there is nothing to resolve — and letting pip try fails, because
+OpenCV 4.13 declares `numpy>=2` while this stack pins numpy 1.26.4 (numpy 2.x
+breaks these compiled extensions). It runs correctly; the metadata just
+disagrees.
 
 `requirements.lock.txt` pins every package to an exact, tested version. It is
 platform- and Python-specific by design, and will refuse to install elsewhere
