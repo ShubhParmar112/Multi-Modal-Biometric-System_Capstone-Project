@@ -361,22 +361,20 @@ def _photo_cannot_face_login():
     from webapp.backend import auth as auth_module
     from webapp.backend.main import app
 
-    import config
-
     shots = sorted(glob.glob(os.path.join(BASE_DIR, "dataset", "USR001", "*.jpg")))
     assert shots, "no enrolled photos of USR001 to test with"
-    burst = [_data_url(shots[0])] * config.LIVENESS_WEB_FRAMES
+    photo = _data_url(shots[0])
 
     with tempfile.TemporaryDirectory() as tmp:
         db = DatabaseManager(_db_copy(tmp))
         app.dependency_overrides[auth_module.get_db] = lambda: db
         try:
             resp = TestClient(app).post("/api/auth/face-login",
-                                        json={"images": burst})
+                                        json={"image": photo})
         finally:
             app.dependency_overrides.pop(auth_module.get_db, None)
 
-    print(f"      photo burst x{len(burst)} -> HTTP {resp.status_code}")
+    print(f"      still photo -> HTTP {resp.status_code}")
     assert resp.status_code != 200, (
         "a still photograph completed passwordless face login and was issued a "
         "session token — no liveness and no second factor on /api/auth/face-login")

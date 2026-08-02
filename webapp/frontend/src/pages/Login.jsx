@@ -163,13 +163,10 @@ export default function Login() {
   async function handleFaceScan() {
     if (!videoRef.current || !cameraReady) return;
     setError("");
+    setInfo("Matching your face…");
     setLoading(true);
     try {
-      const frames = await captureBurst((n, total) =>
-        setInfo(`Blink once — capturing ${n}/${total}…`)
-      );
-      setInfo("Matching your face…");
-      const data = await loginWithFace(frames);
+      const data = await loginWithFace(captureFrame());
       setInfo(`Welcome back, ${data.name}!`);
       stopCamera();
       navigate("/dashboard");
@@ -323,11 +320,10 @@ export default function Login() {
               disabled={loading || !cameraReady}
               style={{ width: "100%" }}
             >
-              {loading ? "Hold still and blink…" : "👁️ Blink to Sign In"}
+              {loading ? "Verifying face..." : "📸 Scan My Face"}
             </button>
             <p className="login-hint">
-              Look straight at the camera in good light and blink once while it
-              captures. A photograph won't get in.
+              Look straight at the camera in good light, then press scan.
             </p>
           </div>
         )}

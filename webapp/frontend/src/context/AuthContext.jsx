@@ -58,14 +58,11 @@ export function AuthProvider({ children }) {
     return res.data;
   }
 
-  async function loginWithFace(imageDataUrls) {
-    // A burst, like verifyTwoFactor: this path hands out a session on the
-    // face alone, so it needs at least as much liveness proof as the
-    // PIN-gated step-up. Face matching runs a CPU model server-side — allow
-    // it extra time.
+  async function loginWithFace(imageDataUrl) {
+    // Face matching runs a CPU model server-side — allow it extra time.
     const res = await client.post(
       "/api/auth/face-login",
-      { images: imageDataUrls },
+      { image: imageDataUrl },
       { timeout: 45000 }
     );
     storeSession(res.data);
