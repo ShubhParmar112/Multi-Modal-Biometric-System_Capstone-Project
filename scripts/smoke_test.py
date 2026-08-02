@@ -295,6 +295,55 @@ def _web_login_lockout():
             app.dependency_overrides.pop(auth_module.get_db, None)
 
 
+def _data_url(path):
+    import base64
+    with open(path, "rb") as fh:
+        return "data:image/jpeg;base64," + base64.b64encode(fh.read()).decode()
+
+
+@check("a photograph cannot complete face 2FA")
+def _photo_cannot_complete_2fa():
+    """Holding a still photo to the camera must not satisfy the face step-up.
+
+    /api/auth/face-verify is the second factor the risk engine escalates to,
+    so if a photograph satisfies it then guessing a PIN is enough to take an
+    account: brute force -> face challenge -> photo -> session.
+
+    Uses an enrolled photo of a real user, which is exactly what an attacker
+    would hold up. Runs against a copy of the database, since the endpoint
+    writes auth_logs rows.
+    """
+    import glob
+    from fastapi.testclient import TestClient
+    from database.db_manager import DatabaseManager
+    from webapp.backend import auth as auth_module
+    from webapp.backend.main import app
+
+    shots = sorted(glob.glob(os.path.join(BASE_DIR, "dataset", "USR001", "*.jpg")))
+    assert shots, "no enrolled photos of USR001 to test with"
+    photo = _data_url(shots[0])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db = DatabaseManager(_db_copy(tmp))
+        challenge = auth_module.create_access_token(
+            "USR001", scope="2fa_pending",
+            minutes=auth_module.TWO_FA_CHALLENGE_MINUTES,
+            extra={"band": "medium", "mfc": 0.0})
+
+        app.dependency_overrides[auth_module.get_db] = lambda: db
+        try:
+            resp = TestClient(app).post(
+                "/api/auth/face-verify",
+                json={"challenge_token": challenge, "image": photo})
+        finally:
+            app.dependency_overrides.pop(auth_module.get_db, None)
+
+    print(f"      still photo -> HTTP {resp.status_code}")
+    assert resp.status_code != 200, (
+        "a still photograph completed the face second factor and was issued a "
+        "session token — there is no liveness check on /api/auth/face-verify")
+
+
 @check("JWT round-trip: valid token decodes, foreign token is rejected")
 def _jwt_round_trip():
     import jwt
