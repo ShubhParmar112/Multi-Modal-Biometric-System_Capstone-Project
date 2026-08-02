@@ -148,7 +148,10 @@
       "Bash('C:/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/32627e59-8689-4e15-9619-14ccab0bab78/scratchpad/freshvenv/Scripts/python.exe' -m ensurepip --upgrade --default-pip)",
       "Bash(rm -rf 'C:/Users/Shubh Parmar/AppData/Local/Temp/lockv')",
       "Bash('C:/Users/Shubh Parmar/anaconda3/python.exe' -m venv 'C:/Users/Shubh Parmar/AppData/Local/Temp/lockv')",
-      "Bash(\"venv/Scripts/python.exe\" -m pip check)"
+      "Bash(\"venv/Scripts/python.exe\" -m pip check)",
+      "Bash(time \"venv/Scripts/python.exe\" -m scripts.smoke_test)",
+      "Bash(git revert *)",
+      "Bash(echo \"REVERT_EXIT=$?\")"
     ]
   }
 }
