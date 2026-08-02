@@ -573,31 +573,32 @@ class ATMInterface:
                 self.current_stage = AuthStage.LIVENESS_CHECK
 
                 self.liveness_detector.reset()
-                blink_count = 0
-                consec_closed = 0
                 liveness_start = time.time()
 
                 while time.time() - liveness_start < config.LIVENESS_TIMEOUT:
                     if self.cap and self.cap.isOpened():
                         ret, frame = self.cap.read()
                         if ret:
-                            ear, blink, _ = \
+                            # ear is None when no face is visible. The state
+                            # machine treats that as "abandon any blink in
+                            # progress", NOT as closed eyes — otherwise a hand
+                            # over the lens counts as blinking and a photo
+                            # passes the check.
+                            ear, _closed, _ = \
                                 self.liveness_detector.check_frame_liveness(frame)
-                            if ear < config.EYE_AR_THRESH:
-                                consec_closed += 1
-                            else:
-                                if consec_closed >= config.EYE_AR_CONSEC_FRAMES:
-                                    blink_count += 1
-                                    self._ui_update_stage(
-                                        "liveness", "active",
-                                        f"Blinks: {blink_count}/{config.LIVENESS_BLINK_REQUIRED}"
-                                    )
-                                consec_closed = 0
+                            if self.liveness_detector.update_blink_state(ear):
+                                self._ui_update_stage(
+                                    "liveness", "active",
+                                    f"Blinks: {self.liveness_detector.blink_count}"
+                                    f"/{config.LIVENESS_BLINK_REQUIRED}"
+                                )
 
-                            if blink_count >= config.LIVENESS_BLINK_REQUIRED:
+                            if self.liveness_detector.blink_count >= \
+                                    config.LIVENESS_BLINK_REQUIRED:
                                 break
                     time.sleep(0.05)
 
+                blink_count = self.liveness_detector.blink_count
                 if blink_count < config.LIVENESS_BLINK_REQUIRED:
                     self._ui_update_stage("liveness", "failed",
                                           "Liveness check failed")

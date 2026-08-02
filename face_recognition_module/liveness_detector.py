@@ -11,7 +11,7 @@ Eye Aspect Ratio (EAR) indices from the 478-landmark model:
 import os
 import cv2
 import numpy as np
-from typing import Tuple
+from typing import Optional, Tuple
 
 import config
 from utils.logger import logger
@@ -48,6 +48,7 @@ class LivenessDetector:
 
     def __init__(self):
         self.blink_count = 0
+        self._consec_closed = 0
         self._detector   = None  # FaceLandmarker (Tasks API)
 
     # ─────────────────────────────────────────────────────────────
@@ -78,19 +79,24 @@ class LivenessDetector:
     # ─────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _eye_aspect_ratio(eye_points: np.ndarray) -> float:
-        """EAR = (||p2-p6|| + ||p3-p5||) / (2 * ||p1-p4||)"""
+    def _eye_aspect_ratio(eye_points: np.ndarray) -> Optional[float]:
+        """EAR = (||p2-p6|| + ||p3-p5||) / (2 * ||p1-p4||)
+
+        Returns None when the eye is degenerate (zero width), which means the
+        landmarks are unusable — not that the eye is shut. See the module
+        docstring for why that distinction matters.
+        """
         v1 = np.linalg.norm(eye_points[1] - eye_points[5])
         v2 = np.linalg.norm(eye_points[2] - eye_points[4])
         h  = np.linalg.norm(eye_points[0] - eye_points[3])
-        return (v1 + v2) / (2.0 * h) if h > 0 else 0.0
+        return (v1 + v2) / (2.0 * h) if h > 0 else None
 
     def _get_ear_from_frame(self, rgb_frame: np.ndarray) -> Tuple[
-            float, np.ndarray, np.ndarray]:
+            Optional[float], np.ndarray, np.ndarray]:
         """
         Run the FaceLandmarker on one RGB frame.
         Returns (EAR, left_eye_pts, right_eye_pts) in pixel coordinates,
-        or (0.0, empty, empty) when no face is detected.
+        or (None, empty, empty) when no face is detected.
         """
         import mediapipe as mp
 
@@ -99,7 +105,7 @@ class LivenessDetector:
         result   = detector.detect(mp_image)
 
         if not result.face_landmarks:
-            return 0.0, np.array([]), np.array([])
+            return None, np.array([]), np.array([])
 
         lm   = result.face_landmarks[0]
         h, w = rgb_frame.shape[:2]
@@ -107,21 +113,30 @@ class LivenessDetector:
         left_pts  = np.array([(lm[i].x * w, lm[i].y * h) for i in _LEFT_EYE_EAR])
         right_pts = np.array([(lm[i].x * w, lm[i].y * h) for i in _RIGHT_EYE_EAR])
 
-        ear = (self._eye_aspect_ratio(left_pts) +
-               self._eye_aspect_ratio(right_pts)) / 2.0
-        return ear, left_pts, right_pts
+        left_ear  = self._eye_aspect_ratio(left_pts)
+        right_ear = self._eye_aspect_ratio(right_pts)
+        usable = [e for e in (left_ear, right_ear) if e is not None]
+        if not usable:
+            # Landmarks came back degenerate — we saw something, but we cannot
+            # measure it. Unmeasurable is not "closed".
+            return None, left_pts, right_pts
+
+        return sum(usable) / len(usable), left_pts, right_pts
 
     # ─────────────────────────────────────────────────────────────
     # Public API
     # ─────────────────────────────────────────────────────────────
 
     def check_frame_liveness(self, frame: np.ndarray) -> Tuple[
-            float, bool, np.ndarray]:
+            Optional[float], bool, np.ndarray]:
         """
         Check liveness on a single frame (used by the UI live feed).
 
         Returns:
-            Tuple of (ear_value, blink_detected, annotated_frame)
+            Tuple of (ear_value, eyes_closed, annotated_frame), where
+            ear_value is None when no face was found or the landmarks were
+            unusable. `eyes_closed` describes THIS frame only — a blink is a
+            temporal event, so use update_blink_state() to count blinks.
         """
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         ear, left_pts, right_pts = self._get_ear_from_frame(rgb)
@@ -132,10 +147,48 @@ class LivenessDetector:
                           True, (0, 212, 170), 1)
             cv2.polylines(display, [right_pts.astype(np.int32)],
                           True, (0, 212, 170), 1)
-            return ear, ear < config.EYE_AR_THRESH, display
 
-        return 0.0, False, display
+        if ear is None:
+            return None, False, display
+        return ear, ear < config.EYE_AR_THRESH, display
+
+    # ─────────────────────────────────────────────────────────────
+    # Blink state machine
+    # ─────────────────────────────────────────────────────────────
+
+    def update_blink_state(self, ear: Optional[float]) -> bool:
+        """
+        Feed one frame's EAR to the blink counter.
+
+        Returns True on the frame where a blink COMPLETES, i.e. the eyes have
+        been shut for at least EYE_AR_CONSEC_FRAMES and have now reopened.
+        `self.blink_count` accumulates completed blinks.
+
+        A blink is "eyes closed, then open again, on a face we watched the
+        whole time". When ear is None we did not see a face, so any blink in
+        progress is DISCARDED rather than completed: without the face we
+        cannot attest that the eyes reopened on a live person. That gap is
+        precisely the attack this guards against — hold a photograph, cover
+        the lens for two frames, uncover, and a naive counter scores a blink.
+        Losing the face mid-blink therefore costs the user that blink and
+        they must blink again; that is the intended trade.
+        """
+        if ear is None:
+            self._consec_closed = 0
+            return False
+
+        if ear < config.EYE_AR_THRESH:
+            self._consec_closed += 1
+            return False
+
+        # Eyes are open. If they were shut long enough, that was a blink.
+        completed = self._consec_closed >= config.EYE_AR_CONSEC_FRAMES
+        self._consec_closed = 0
+        if completed:
+            self.blink_count += 1
+        return completed
 
     def reset(self):
-        """Reset blink counter for a new liveness check."""
+        """Reset blink counter and state for a new liveness check."""
         self.blink_count = 0
+        self._consec_closed = 0
