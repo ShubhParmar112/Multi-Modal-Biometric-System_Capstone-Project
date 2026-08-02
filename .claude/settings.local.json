@@ -122,7 +122,16 @@
       "Bash(where py *)",
       "Bash(\"venv/Scripts/python.exe\" -c \"import scripts.smoke_test\")",
       "Bash(\"venv/Scripts/python.exe\" -c \"import colorama, fastapi, jwt; print\\('deps OK — colorama/fastapi/pyjwt present in venv'\\)\")",
-      "Bash(cd \"C:/Users/Shubh Parmar/Desktop/NMIMS/YEAR 5/Semester X/COMPUTER VISION & APPLICATION \\(CVA\\)/Project/Project/Biometric_ATM System/Final/Final\" && echo \"--- /usr/local/bin/python3 ---\"; ls /usr/local/bin/python3 2>&1 | head -1; echo \"--- CHANGE_LOG.md ---\"; ls CHANGE_LOG.md 2>&1 | head -1; echo \"--- smoke_test ---\"; ls scripts/; echo \"--- backup dir ---\"; find . -iname \"*backup*\" -not -path \"./venv/*\" -not -path \"*/node_modules/*\" 2>/dev/null | head -3; echo \"\\(none if empty\\)\"; echo \"--- git ---\"; git log --oneline -1; git status --porcelain)"
+      "Bash(cd \"C:/Users/Shubh Parmar/Desktop/NMIMS/YEAR 5/Semester X/COMPUTER VISION & APPLICATION \\(CVA\\)/Project/Project/Biometric_ATM System/Final/Final\" && echo \"--- /usr/local/bin/python3 ---\"; ls /usr/local/bin/python3 2>&1 | head -1; echo \"--- CHANGE_LOG.md ---\"; ls CHANGE_LOG.md 2>&1 | head -1; echo \"--- smoke_test ---\"; ls scripts/; echo \"--- backup dir ---\"; find . -iname \"*backup*\" -not -path \"./venv/*\" -not -path \"*/node_modules/*\" 2>/dev/null | head -3; echo \"\\(none if empty\\)\"; echo \"--- git ---\"; git log --oneline -1; git status --porcelain)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(\"venv/Scripts/python.exe\" -m scripts.smoke_test)",
+      "Bash(\"venv/Scripts/python.exe\" -m scripts.smoke_test --save-baseline)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(mkdir -p 'C:/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/32627e59-8689-4e15-9619-14ccab0bab78/scratchpad')",
+      "Bash(cp .env 'C:/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/32627e59-8689-4e15-9619-14ccab0bab78/scratchpad/env.backup')",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code}\\\\n' -H 'Authorization: Bearer __CMDSUB_OUTPUT__' http://localhost:8000/api/settings/profile)",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code}\\\\n' -H 'Authorization: Bearer __TRACKED_VAR__' http://localhost:8000/api/settings/profile)"
     ]
   }
 }
