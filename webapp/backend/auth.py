@@ -384,10 +384,33 @@ def face_verify(req: FaceVerifyRequest, request: Request,
 
 @router.post("/face-login", response_model=TokenResponse)
 def face_login(req: FaceLoginRequest, db: DatabaseManager = Depends(get_db)):
-    """Identify the user from a single webcam frame and issue a JWT."""
-    frame = _decode_frame(req.image)
-    if frame is None:
-        raise HTTPException(status_code=400, detail="Could not decode the image")
+    """Identify the user from a burst of webcam frames and issue a JWT.
+
+    This is the only path that hands out a session on a biometric alone — no
+    PIN, no challenge — so it applies the same liveness bar as the PIN-gated
+    step-up, plus the routine face-confidence floor.
+    """
+    frames = [f for f in (_decode_frame(img) for img in req.images)
+              if f is not None]
+    if not frames:
+        raise HTTPException(status_code=400, detail="Could not decode the images")
+
+    # Liveness before recognition: a still photograph holds a constant
+    # eye-aspect-ratio and can never blink.
+    blinks, best_frame = _count_blinks(frames)
+    if blinks < config.LIVENESS_BLINK_REQUIRED:
+        # user_id None, not "UNKNOWN": auth_logs.user_id has a foreign key to
+        # users and foreign_keys is ON, so a literal "UNKNOWN" fails the
+        # constraint and log_auth_event swallows the error — the attempt would
+        # never be recorded. NULL is permitted by the FK and stores fine, so a
+        # spoof attempt against this endpoint is actually auditable.
+        db.log_auth_event(None, "web_face_login", "failure",
+                          f"liveness failed — {blinks} blink(s) across "
+                          f"{len(frames)} frames")
+        raise HTTPException(
+            status_code=401,
+            detail="We couldn't tell that was a live person. Look at the "
+                   "camera and blink once while it captures.")
 
     try:
         recognizer = get_face_recognizer()
@@ -395,15 +418,27 @@ def face_login(req: FaceLoginRequest, db: DatabaseManager = Depends(get_db)):
         raise HTTPException(status_code=503, detail=str(e))
 
     with _face_lock:
-        user_id, confidence, face_loc = recognizer.recognize_from_frame(frame)
+        user_id, confidence, face_loc = recognizer.recognize_from_frame(best_frame)
 
     if face_loc is None:
         raise HTTPException(status_code=401,
                             detail="No face detected — center your face and try again")
     if not user_id:
-        db.log_auth_event("UNKNOWN", "web_face_login", "failure",
-                          f"confidence={confidence:.3f}")
+        db.log_auth_event(None, "web_face_login", "failure",
+                          f"unrecognised face, confidence={confidence:.3f}")
         raise HTTPException(status_code=401, detail="Face not recognized")
+
+    # Confidence floor. face-verify has always enforced one; this endpoint
+    # never did, even though it grants a session on the face alone — so a
+    # marginal match was enough to log in as somebody.
+    if confidence < config.MIN_FACE_CONFIDENCE:
+        db.log_auth_event(user_id, "web_face_login", "failure",
+                          f"confidence={confidence:.3f} below floor "
+                          f"{config.MIN_FACE_CONFIDENCE:.2f}")
+        raise HTTPException(
+            status_code=401,
+            detail="Face match wasn't clear enough. Face the camera in good "
+                   "light and try again.")
 
     user = db.get_user(user_id)
     if not user:

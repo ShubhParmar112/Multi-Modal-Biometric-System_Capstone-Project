@@ -14,7 +14,10 @@ class LoginRequest(BaseModel):
 
 
 class FaceLoginRequest(BaseModel):
-    image: str  # data-URL or bare base64 JPEG/PNG captured from the webcam
+    # A burst, like FaceVerifyRequest: this endpoint hands out a session with
+    # no second factor at all, so it needs at least as much liveness proof as
+    # the PIN-gated step-up does.
+    images: List[str]
 
 
 class ChangePinRequest(BaseModel):
