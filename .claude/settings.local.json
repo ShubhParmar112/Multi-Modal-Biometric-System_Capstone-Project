@@ -134,7 +134,11 @@
       "Bash(curl -s -o /dev/null -w 'HTTP %{http_code}\\\\n' -H 'Authorization: Bearer __TRACKED_VAR__' http://localhost:8000/api/settings/profile)",
       "Bash(\"venv/Scripts/python.exe\" -c \"import mediapipe; print\\('mediapipe', mediapipe.__version__\\)\")",
       "Bash(\"venv/Scripts/python.exe\" -m py_compile face_recognition_module/liveness_detector.py ui/atm_interface.py)",
-      "Bash(\"venv/Scripts/python.exe\" -m pytest tests/test_liveness.py -v --no-header)"
+      "Bash(\"venv/Scripts/python.exe\" -m pytest tests/test_liveness.py -v --no-header)",
+      "Bash(grep -iE \"^\\\\.env$|jwt_secret\")",
+      "Bash(gh repo *)",
+      "Bash(\"venv/Scripts/python.exe\" -c \"import customtkinter; print\\('customtkinter', customtkinter.__version__\\); print\\(customtkinter.windows.ctk_tk.__file__\\)\")",
+      "Bash(venv/Scripts/python.exe __TRACKED_VAR__/trial.py atm)"
     ]
   }
 }
