@@ -194,6 +194,60 @@ def _webapp_imports():
         assert path in paths, f"route {path} missing"
 
 
+@check("liveness no-face contract")
+def _liveness_no_face_contract():
+    """A frame with no face must NOT be representable as a low EAR.
+
+    The detector returns an eye-aspect-ratio, and callers decide a blink has
+    started when the EAR falls below EYE_AR_THRESH. If "no face" is reported
+    as 0.0 then every faceless frame reads as a closed eye, and covering the
+    camera counts as blinking — so a photograph plus a hand defeats the
+    anti-spoofing check. "No face" must be its own value.
+    """
+    import numpy as np
+    import config
+    from face_recognition_module.liveness_detector import LivenessDetector
+
+    detector = LivenessDetector()
+    blank = np.zeros((480, 640, 3), dtype=np.uint8)
+    ear, blink_detected, _ = detector.check_frame_liveness(blank)
+
+    print(f"      no-face frame -> ear={ear!r}, blink_detected={blink_detected!r}")
+
+    assert ear is None, (
+        f"no-face frame reported ear={ear!r}; callers comparing "
+        f"ear < {config.EYE_AR_THRESH} will count it as a closed eye")
+    assert blink_detected is False, "no-face frame reported a blink"
+
+
+@check("a still image cannot blink")
+def _still_image_cannot_blink():
+    """Feeding the same frame repeatedly must never register a blink.
+
+    A sequence of identical frames is the cheapest stand-in for holding a
+    photograph to the camera, and needs no webcam.
+    """
+    import glob
+    import cv2
+    from face_recognition_module.liveness_detector import LivenessDetector
+
+    samples = sorted(glob.glob(os.path.join(BASE_DIR, "dataset", "*", "*.jpg")))
+    assert samples, "no enrolled face images to test against"
+    frame = cv2.imread(samples[0])
+    assert frame is not None, f"could not read {samples[0]}"
+
+    detector = LivenessDetector()
+    if not hasattr(detector, "update_blink_state"):
+        raise AssertionError(
+            "LivenessDetector.update_blink_state is missing — the blink state "
+            "machine still lives in ui/atm_interface.py and cannot be tested")
+
+    detector.reset()
+    blinks = sum(detector.update_blink_state(
+        detector.check_frame_liveness(frame)[0]) for _ in range(15))
+    assert blinks == 0, f"a still photograph registered {blinks} blink(s)"
+
+
 @check("JWT round-trip: valid token decodes, foreign token is rejected")
 def _jwt_round_trip():
     import jwt
