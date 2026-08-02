@@ -1,8 +1,21 @@
 # Multi-Modal Biometric Authentication System
-# Core dependencies (Python 3.11+ compatible)
+# Direct dependencies, with lower bounds only. This file states what the
+# project needs; it does NOT reproduce a known-good environment — an
+# unbounded resolve today picks numpy 2.x, OpenCV 5 and mediapipe 1.0, none
+# of which this project has been tested against.
+#
+# To reproduce the environment that is known to work:
+#     pip install -r requirements.lock.txt
+#
+# Regenerate the lock from a working venv with:
+#     python -m pip freeze > requirements.lock.txt
+# then drop the opencv-python / opencv-python-headless lines (see below).
 
 # Computer Vision
-opencv-python>=4.9.0
+# opencv-contrib-python, not opencv-python: contrib is the build actually
+# loaded here (cv2.xfeatures2d is present), so it is what every test has
+# exercised. It is a superset, so nothing that works can regress.
+opencv-contrib-python>=4.9.0
 numpy>=1.26.0
 Pillow>=10.2.0
 
