@@ -23,10 +23,16 @@ customtkinter>=5.2.0
 
 # Utilities
 colorama>=0.4.6
+python-dotenv>=1.0           # config.py loads .env — without this a clean install
+                             # fails at `import config`, i.e. everywhere
+requests>=2.31               # portfolio/specific_picks.py, portfolio/yf_worker.py,
+                             # scripts/build_universe.py (2.31 = CVE-2023-32681 fix)
 
 # Fraud Detection
 scikit-learn>=1.3
 xgboost>=2.0
+joblib>=1.3.0                # imported directly by fraud_detection/{detector,train}.py;
+                             # floor matches scikit-learn's own requirement
 
 # Personal Finance Analytics
 matplotlib>=3.8
@@ -35,10 +41,16 @@ matplotlib>=3.8
 fastapi>=0.110
 uvicorn[standard]>=0.27
 pyjwt>=2.8
+pydantic>=2.9.0              # schemas.py + routers/advisor.py import BaseModel
+                             # directly; v2 API, floor matches FastAPI's own
 
 # Portfolio Optimization
 yfinance>=0.2
 scipy>=1.11
+pandas>=1.3.0                # portfolio/market_data.py calls .shift()/.mean()/.corr()
+                             # on yfinance's return values — never imported, but the
+                             # code depends on the pandas API. Floor deliberately
+                             # matches yfinance's own so this can never force a move.
 
 # AI Financial Advisor (Groq — Llama 3)
 groq>=0.9
