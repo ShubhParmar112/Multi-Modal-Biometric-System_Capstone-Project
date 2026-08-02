@@ -1,0 +1,116 @@
+# Pinned, known-good environment for the Multi-Modal Biometric Auth System.
+#
+#     pip install -r requirements.lock.txt
+#
+# Generated 2026-08-02 from a working venv on
+# CPython 3.12.4 / Windows AMD64.
+#
+# THIS LOCK IS PLATFORM AND PYTHON SPECIFIC. It pins exact wheels and will
+# fail to install on a different OS or Python version. That is deliberate —
+# failing loudly beats silently resolving to versions this project has never
+# been tested against. On another platform, install from requirements.txt and
+# expect to re-verify.
+#
+# Only opencv-contrib-python is pinned. opencv-python and
+# opencv-python-headless are also present in the source venv, but all three
+# ship the same cv2 and overwrite each other, so pinning all three would leave
+# the resulting cv2 dependent on pip's install order. Contrib is the build
+# that actually loads here and is a superset of the other two.
+#
+# Regenerate after changing dependencies:
+#     python -m pip freeze > requirements.lock.txt
+#     (then remove the opencv-python / opencv-python-headless lines)
+
+absl-py==2.4.0
+albucore==0.0.24
+albumentations==2.0.8
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.14.1
+beautifulsoup4==4.15.0
+certifi==2026.2.25
+cffi==2.0.0
+charset-normalizer==3.4.7
+click==8.4.2
+colorama==0.4.6
+coloredlogs==15.0.1
+contourpy==1.3.3
+curl_cffi==0.15.0
+customtkinter==5.2.2
+cycler==0.12.1
+Cython==3.2.4
+darkdetect==0.8.0
+distro==1.9.0
+easydict==1.13
+fastapi==0.138.2
+flatbuffers==25.12.19
+fonttools==4.62.1
+groq==1.5.0
+h11==0.16.0
+httpcore==1.0.9
+httptools==0.8.0
+httpx==0.28.1
+humanfriendly==10.0
+idna==3.11
+ImageIO==2.37.3
+insightface==0.7.3
+joblib==1.5.3
+kiwisolver==1.5.0
+lazy-loader==0.5
+markdown-it-py==4.2.0
+matplotlib==3.10.8
+mdurl==0.1.2
+mediapipe==0.10.33
+ml_dtypes==0.5.4
+mpmath==1.3.0
+multitasking==0.0.13
+networkx==3.6.1
+numpy==1.26.4
+onnx==1.21.0
+onnxruntime==1.18.0
+opencv-contrib-python==4.13.0.92
+packaging==26.1
+pandas==3.0.4
+peewee==4.1.1
+pillow==12.2.0
+platformdirs==4.10.0
+prettytable==3.17.0
+protobuf==7.34.1
+pycparser==3.0
+pydantic==2.13.2
+pydantic_core==2.46.2
+Pygments==2.20.0
+PyJWT==2.13.0
+pyparsing==3.3.2
+pyreadline3==3.5.4
+pyserial==3.5
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+pytz==2026.2
+PyYAML==6.0.3
+requests==2.33.1
+rich==15.0.0
+scikit-image==0.26.0
+scikit-learn==1.8.0
+scipy==1.17.1
+simsimd==6.5.16
+six==1.17.0
+sniffio==1.3.1
+sounddevice==0.5.5
+soupsieve==2.8.4
+starlette==1.3.1
+stringzilla==4.6.0
+sympy==1.14.0
+threadpoolctl==3.6.0
+tifffile==2026.4.11
+tqdm==4.67.3
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+tzdata==2026.2
+urllib3==2.6.3
+uvicorn==0.49.0
+watchfiles==1.2.0
+wcwidth==0.6.0
+websockets==16.0
+xgboost==3.3.0
+yfinance==1.5.1
