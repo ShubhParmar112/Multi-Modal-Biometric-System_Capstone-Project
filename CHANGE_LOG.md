@@ -5,6 +5,66 @@ changed, how it was verified, and what was left undone.
 
 ---
 
+## 2026-08-02 — Declare five undeclared dependencies
+
+**Problem.** Five packages were imported but absent from `requirements.txt`, so
+a clean `pip install -r requirements.txt` produced a project that crashed on
+import. `python-dotenv` was the worst: `config.py` imports it at module level,
+and `config` is imported by `main.py`, the Tkinter ATM and the whole web
+backend — a fresh install failed at the first import.
+
+**Change.** Added, with floors at or below the installed version. Where an
+existing dependency already requires the package, the floor matches that
+requirement exactly so these lines can never contradict the resolver:
+
+| Added | Used by | Floor rationale |
+|:--|:--|:--|
+| `python-dotenv>=1.0` | `config.py` | installed 1.2.2 |
+| `requests>=2.31` | `specific_picks.py`, `yf_worker.py`, `build_universe.py` | CVE-2023-32681 fix |
+| `joblib>=1.3.0` | `fraud_detection/{detector,train}.py` | = scikit-learn's floor |
+| `pydantic>=2.9.0` | `schemas.py`, `routers/advisor.py` | = FastAPI's floor; v2 API |
+| `pandas>=1.3.0` | `portfolio/market_data.py` | = yfinance's floor |
+
+`pandas` is never imported — `market_data.py` calls `.shift()/.mean()/.corr()`
+on values yfinance returns, so the code depends on the pandas API without an
+import. Declared to document that coupling, at a floor that is a resolver no-op.
+
+**Nothing was installed; no package version changed.** numpy 1.26.4,
+scipy 1.17.1, pandas 3.0.4 before and after. Found by AST-walking every import
+in the project and diffing against `requirements.txt`, not by grepping.
+
+**Verified.** Smoke test 13/13 before and after. Every requirement line
+satisfied by the current venv. `from webapp.backend.main import app` →
+13 routes. Re-run audit: no imported-but-undeclared packages remain.
+
+`pip install --dry-run --ignore-installed -r requirements.txt` exits 0 and
+resolves 78 packages with no conflicts. A real fresh venv was NOT built.
+
+**Open issue this surfaced — requirements.txt does not reproduce this
+environment.** Every constraint is an unbounded `>=`, so the dry run shows a
+clean install today would pick major versions this project has never run on:
+
+| Package | Installed here | Fresh install picks |
+|:--|:--|:--|
+| numpy | 1.26.4 | **2.5.1** |
+| opencv-python | 4.13.0.92 | **5.0.0.93** |
+| mediapipe | 0.10.33 | **1.0.0** |
+| insightface | 0.7.3 | **1.0.1** |
+| onnxruntime | 1.18.0 | 1.28.0 |
+| scikit-learn | 1.8.0 | 1.9.0 |
+
+The numpy 1.x → 2.x jump alone breaks many compiled extensions. So the import
+errors are fixed, but a clean install is still not trustworthy. Fixing that
+means upper bounds or a pinned lockfile — a separate decision, not taken here.
+
+**Also noted, deliberately not fixed** (would require uninstalling):
+`opencv-python`, `opencv-contrib-python` and `opencv-python-headless` are all
+installed at 4.13.0.92. Each ships its own `cv2` and they overwrite one
+another. No contrib-only APIs are used (`SIFT_create` moved into the main
+module in OpenCV 4.4), so `opencv-python` remains the correct declaration.
+
+---
+
 ## 2026-08-02 — Liveness: stop counting "no face" as "eyes closed"
 
 **Problem.** `LivenessDetector._get_ear_from_frame` returned an eye-aspect
