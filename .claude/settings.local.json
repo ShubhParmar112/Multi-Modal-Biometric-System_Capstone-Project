@@ -138,7 +138,17 @@
       "Bash(grep -iE \"^\\\\.env$|jwt_secret\")",
       "Bash(gh repo *)",
       "Bash(\"venv/Scripts/python.exe\" -c \"import customtkinter; print\\('customtkinter', customtkinter.__version__\\); print\\(customtkinter.windows.ctk_tk.__file__\\)\")",
-      "Bash(venv/Scripts/python.exe __TRACKED_VAR__/trial.py atm)"
+      "Bash(venv/Scripts/python.exe __TRACKED_VAR__/trial.py atm)",
+      "Bash(\"venv/Scripts/python.exe\" -m pip list)",
+      "Bash(\"venv/Scripts/python.exe\" -c \"from webapp.backend.main import app; print\\('routes:', len\\(app.routes\\)\\)\")",
+      "Bash(timeout 420 \"venv/Scripts/python.exe\" -m pip install --dry-run --ignore-installed --quiet --report - -r requirements.txt)",
+      "Bash(\"venv/Scripts/python.exe\" -m pip freeze)",
+      "Bash(grep -iE \"^-e |@ file:|@ git|\\\\.dev|rc[0-9]|b[0-9]$|a[0-9]$\")",
+      "Bash(\"venv/Scripts/python.exe\" -c \"import sys,platform; print\\(sys.version.split\\(\\)[0], '|', platform.system\\(\\), platform.machine\\(\\)\\)\")",
+      "Bash('C:/Users/Shubh Parmar/AppData/Local/Temp/claude/C--Users-Shubh-Parmar-Desktop-NMIMS-YEAR-5-Semester-X-COMPUTER-VISION---APPLICATION--CVA--Project-Project-Biometric-ATM-System-Final-Final/32627e59-8689-4e15-9619-14ccab0bab78/scratchpad/freshvenv/Scripts/python.exe' -m ensurepip --upgrade --default-pip)",
+      "Bash(rm -rf 'C:/Users/Shubh Parmar/AppData/Local/Temp/lockv')",
+      "Bash('C:/Users/Shubh Parmar/anaconda3/python.exe' -m venv 'C:/Users/Shubh Parmar/AppData/Local/Temp/lockv')",
+      "Bash(\"venv/Scripts/python.exe\" -m pip check)"
     ]
   }
 }
