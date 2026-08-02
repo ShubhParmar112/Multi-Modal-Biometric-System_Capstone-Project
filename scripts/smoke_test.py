@@ -347,6 +347,39 @@ def _photo_cannot_complete_2fa():
         "session token — liveness is not being enforced on /api/auth/face-verify")
 
 
+@check("a photograph cannot complete passwordless face login")
+def _photo_cannot_face_login():
+    """/api/auth/face-login issues a full session with no second factor.
+
+    It is the weakest surface in the system: no PIN, no challenge, nothing but
+    a face. If a still photograph satisfies it, anyone holding a picture of an
+    enrolled user is that user.
+    """
+    import glob
+    from fastapi.testclient import TestClient
+    from database.db_manager import DatabaseManager
+    from webapp.backend import auth as auth_module
+    from webapp.backend.main import app
+
+    shots = sorted(glob.glob(os.path.join(BASE_DIR, "dataset", "USR001", "*.jpg")))
+    assert shots, "no enrolled photos of USR001 to test with"
+    photo = _data_url(shots[0])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db = DatabaseManager(_db_copy(tmp))
+        app.dependency_overrides[auth_module.get_db] = lambda: db
+        try:
+            resp = TestClient(app).post("/api/auth/face-login",
+                                        json={"image": photo})
+        finally:
+            app.dependency_overrides.pop(auth_module.get_db, None)
+
+    print(f"      still photo -> HTTP {resp.status_code}")
+    assert resp.status_code != 200, (
+        "a still photograph completed passwordless face login and was issued a "
+        "session token — no liveness and no second factor on /api/auth/face-login")
+
+
 @check("JWT round-trip: valid token decodes, foreign token is rejected")
 def _jwt_round_trip():
     import jwt
