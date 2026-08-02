@@ -33,6 +33,22 @@ app = FastAPI(title="SmartBank API")
 
 
 @app.on_event("startup")
+def check_jwt_secret():
+    """Warn when the session-signing key was generated rather than supplied.
+
+    This lives here, not in config.py, because the CLI and the Tkinter ATM
+    import config too and never issue a JWT — they must not be nagged about
+    a secret they do not use."""
+    if config.JWT_SECRET_IS_GENERATED:
+        logger.warning(
+            f"JWT_SECRET is not set — using the generated key cached in "
+            f"{os.path.basename(config.JWT_SECRET_FILE)}. Sessions survive "
+            f"restarts, but the key differs per machine and is not suitable "
+            f"for deployment. Set JWT_SECRET in .env (see .env.example)."
+        )
+
+
+@app.on_event("startup")
 def warm_market_caches():
     """Fetch market data in the background so the first Portfolio page
     visit doesn't pay the yfinance download cost."""
