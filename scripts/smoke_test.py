@@ -248,6 +248,53 @@ def _still_image_cannot_blink():
     assert blinks == 0, f"a still photograph registered {blinks} blink(s)"
 
 
+@check("web login lockout")
+def _web_login_lockout():
+    """After MAX_PIN_ATTEMPTS failures the login endpoint must refuse a user
+    EVEN WHEN THE PIN IS CORRECT, or the lockout is decorative.
+
+    Drives the real endpoint. Runs against a throwaway copy of the database
+    with a purpose-made user, because a TestClient request writes auth_logs
+    rows to whatever database the app is wired to.
+    """
+    import config
+    from fastapi.testclient import TestClient
+    from database.db_manager import DatabaseManager
+    from webapp.backend import auth as auth_module
+    from webapp.backend.main import app
+
+    uid, pin, wrong = "USR_LOCKOUT_SMOKE", "4242", "0000"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _db_copy(tmp)
+        db = DatabaseManager(path)
+        # fingerprint_id is UNIQUE; pick one far from the enrolled range.
+        assert db.add_user(uid, "Lockout Smoke Test", 9931, pin), \
+            "could not create the test user"
+
+        app.dependency_overrides[auth_module.get_db] = lambda: db
+        try:
+            client = TestClient(app)
+
+            def attempt(p):
+                return client.post("/api/auth/login",
+                                   json={"user_id": uid, "pin": p}).status_code
+
+            codes = [attempt(wrong) for _ in range(config.MAX_PIN_ATTEMPTS)]
+            assert all(c == 401 for c in codes), \
+                f"expected 401 for each wrong PIN, got {codes}"
+
+            final = attempt(pin)          # the CORRECT pin
+            print(f"      {config.MAX_PIN_ATTEMPTS} wrong -> {codes}, "
+                  f"then correct PIN -> {final}")
+            assert final == 429, (
+                f"after {config.MAX_PIN_ATTEMPTS} failed attempts the correct "
+                f"PIN still returned {final}; the account is not locked and the "
+                f"whole 4-digit keyspace is walkable over HTTP")
+        finally:
+            app.dependency_overrides.pop(auth_module.get_db, None)
+
+
 @check("JWT round-trip: valid token decodes, foreign token is rejected")
 def _jwt_round_trip():
     import jwt
