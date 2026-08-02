@@ -158,6 +158,34 @@ def get_effective_user(x_view_as: Optional[str] = Header(None, alias="X-View-As"
     return target
 
 
+def _count_blinks(frames):
+    """Count blinks across a burst and pick the best frame for recognition.
+
+    Returns (blink_count, best_frame). "Best" is the frame with the highest
+    eye-aspect-ratio — eyes widest open — because a mid-blink frame is a poor
+    input to face matching. Falls back to the first frame if no face was found
+    in any of them; the caller's own no-face check then handles it.
+
+    A fresh LivenessDetector per call, deliberately: MediaPipe holds per-
+    instance state, and one detector per request costs ~36ms warm while
+    removing any need to serialise this behind _face_lock. Only the single
+    InsightFace call needs that lock.
+    """
+    from face_recognition_module.liveness_detector import LivenessDetector
+
+    detector = LivenessDetector()
+    detector.reset()
+
+    best_frame, best_ear = frames[0], None
+    for frame in frames:
+        ear, _closed, _display = detector.check_frame_liveness(frame)
+        detector.update_blink_state(ear)
+        if ear is not None and (best_ear is None or ear > best_ear):
+            best_ear, best_frame = ear, frame
+
+    return detector.blink_count, best_frame
+
+
 def _decode_frame(image: str):
     """Decode a data-URL or bare-base64 webcam frame into a BGR ndarray."""
     import cv2
@@ -286,17 +314,35 @@ def face_verify(req: FaceVerifyRequest, request: Request,
     min_face_confidence = payload.get("mfc", config.MIN_FACE_CONFIDENCE)
     reasons = payload.get("rsn", "")
 
-    frame = _decode_frame(req.image)
-    if frame is None:
-        raise HTTPException(status_code=400, detail="Could not decode the image")
+    frames = [f for f in (_decode_frame(img) for img in req.images)
+              if f is not None]
+    if not frames:
+        raise HTTPException(status_code=400, detail="Could not decode the images")
+
+    # Liveness BEFORE recognition. A still photograph produces a perfectly
+    # constant eye-aspect-ratio and can never blink, so this is what stops a
+    # printed or on-screen photo satisfying the step-up. Recognition is also
+    # the expensive step — no reason to run it on frames we already know came
+    # from a photo.
+    blinks, best_frame = _count_blinks(frames)
+    if blinks < config.LIVENESS_BLINK_REQUIRED:
+        db.log_auth_event(expected_user_id, "web_2fa_face", "failure",
+                          f"liveness failed — {blinks} blink(s) across "
+                          f"{len(frames)} frames")
+        raise HTTPException(
+            status_code=401,
+            detail="We couldn't tell that was a live person. Look at the "
+                   "camera and blink once while it captures.")
 
     try:
         recognizer = get_face_recognizer()
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
+    # Only the single best frame goes through recognition, so the lock is held
+    # for one inference — exactly as long as before the burst.
     with _face_lock:
-        user_id, confidence, face_loc = recognizer.recognize_from_frame(frame)
+        user_id, confidence, face_loc = recognizer.recognize_from_frame(best_frame)
 
     if face_loc is None:
         raise HTTPException(status_code=401,

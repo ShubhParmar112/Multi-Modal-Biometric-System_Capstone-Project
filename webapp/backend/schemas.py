@@ -33,7 +33,11 @@ class BeneficiaryRequest(BaseModel):
 
 class FaceVerifyRequest(BaseModel):
     challenge_token: str
-    image: str  # data-URL or bare base64 webcam frame
+    # A burst of consecutive webcam frames (data-URL or bare base64), not one
+    # snapshot: the server needs to see a blink across them before it will
+    # trust the face. A single frame can never contain a blink, so the old
+    # one-image shape is deliberately not accepted — it could only ever fail.
+    images: List[str]
 
 
 class TwoFactorRequest(BaseModel):

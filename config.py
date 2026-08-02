@@ -49,6 +49,19 @@ EYE_AR_CONSEC_FRAMES = 2             # Consecutive frames for blink detection (l
 LIVENESS_BLINK_REQUIRED = 1          # Number of blinks required (lowered from 3 to 1 for convenience)
 LIVENESS_TIMEOUT = 15                 # Seconds to wait for liveness check (increased slightly just in case)
 
+# ── Web face step-up (/api/auth/face-verify) ─────────────────
+# The browser sends a short burst instead of one frame, and the server
+# requires a real blink across it before it will even attempt recognition.
+#
+# The interval matters more than the count. EYE_AR_CONSEC_FRAMES (2) means a
+# blink has to span at least two captured frames, and a human blink lasts
+# 100-400ms — so at 200ms/frame a fast blink falls between frames and is
+# missed. 120ms keeps a 300ms blink spanning ~2.5 frames.
+LIVENESS_WEB_FRAMES = 20              # frames the browser captures per attempt
+LIVENESS_WEB_FRAME_INTERVAL_MS = 120  # ~2.4s of capture, ~8 fps
+# Blink count is shared with the ATM (LIVENESS_BLINK_REQUIRED) so both
+# surfaces demand the same proof.
+
 # ============================================================
 # FINGERPRINT / SERIAL SETTINGS
 # ============================================================
