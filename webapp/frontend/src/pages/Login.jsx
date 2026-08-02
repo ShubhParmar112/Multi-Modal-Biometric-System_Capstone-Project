@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
+// Must stay in step with LIVENESS_WEB_FRAMES / LIVENESS_WEB_FRAME_INTERVAL_MS
+// in config.py. The interval is the part that matters: a blink lasts
+// 100-400ms and has to span at least EYE_AR_CONSEC_FRAMES (2) captured
+// frames, so sampling much slower than this drops fast blinks between frames
+// and locks out real users.
+const BURST_FRAMES = 20;
+const BURST_INTERVAL_MS = 120;
+
 export default function Login() {
   const [mode, setMode] = useState("pin"); // "pin" | "face"
   const [userId, setUserId] = useState("");
@@ -96,13 +104,41 @@ export default function Login() {
     return canvas.toDataURL("image/jpeg", 0.9);
   }
 
+  // Capture a short burst so the server can look for a blink across it. One
+  // snapshot can never show a blink, which is what let a photograph pass.
+  // Quality is a little lower than the single-frame path: 20 frames at 0.9
+  // would be ~2.4MB per attempt, and the frames only need to be good enough
+  // for eye landmarks plus one recognition pass.
+  function captureBurst(onProgress) {
+    return new Promise((resolve) => {
+      const video = videoRef.current;
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext("2d");
+      const frames = [];
+
+      const grab = () => {
+        ctx.drawImage(video, 0, 0);
+        frames.push(canvas.toDataURL("image/jpeg", 0.8));
+        if (onProgress) onProgress(frames.length, BURST_FRAMES);
+        if (frames.length >= BURST_FRAMES) resolve(frames);
+        else setTimeout(grab, BURST_INTERVAL_MS);
+      };
+      grab();
+    });
+  }
+
   async function handleTwoFaScan() {
     if (!videoRef.current || !cameraReady) return;
     setError("");
-    setInfo("Verifying it's you…");
     setLoading(true);
     try {
-      const data = await verifyTwoFactor(twoFa.challenge_token, captureFrame());
+      const frames = await captureBurst((n, total) =>
+        setInfo(`Blink once — capturing ${n}/${total}…`)
+      );
+      setInfo("Verifying it's you…");
+      const data = await verifyTwoFactor(twoFa.challenge_token, frames);
       setInfo(`Welcome back, ${data.name}!`);
       stopCamera();
       navigate("/dashboard");
@@ -201,6 +237,13 @@ export default function Login() {
               )}
             </div>
 
+            {/* The server rejects a face it never saw blink, so say so before
+                they press the button rather than after it fails. */}
+            <p className="field-label" style={{ marginTop: 8 }}>
+              Look at the camera and blink once while it captures — a
+              photograph won't get in.
+            </p>
+
             {error && <p className="error-text">{error}</p>}
             {info && <p className="success-text">{info}</p>}
 
@@ -211,7 +254,7 @@ export default function Login() {
               disabled={loading || !cameraReady}
               style={{ width: "100%" }}
             >
-              {loading ? "Verifying face..." : "📸 Verify My Face"}
+              {loading ? "Hold still and blink…" : "👁️ Blink to Verify"}
             </button>
             <button
               className="btn btn-secondary"

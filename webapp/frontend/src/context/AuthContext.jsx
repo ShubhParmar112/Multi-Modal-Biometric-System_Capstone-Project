@@ -45,11 +45,13 @@ export function AuthProvider({ children }) {
     return res.data;
   }
 
-  async function verifyTwoFactor(challengeToken, imageDataUrl) {
-    // Face matching runs a CPU model server-side — allow it extra time.
+  async function verifyTwoFactor(challengeToken, imageDataUrls) {
+    // A burst of frames, not one snapshot: the server looks for a blink
+    // across them before it will trust the face. Face matching runs a CPU
+    // model server-side — allow it extra time.
     const res = await client.post(
       "/api/auth/face-verify",
-      { challenge_token: challengeToken, image: imageDataUrl },
+      { challenge_token: challengeToken, images: imageDataUrls },
       { timeout: 45000 }
     );
     storeSession(res.data);
