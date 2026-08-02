@@ -136,6 +136,61 @@ def test_reset_clears_in_progress_state():
     assert _feed(d, [OPEN]) == 0
 
 
+# ── The web step-up aggregation (/api/auth/face-verify) ──────
+
+
+def _burst(*paths):
+    import cv2
+    return [cv2.imread(p) for p in paths]
+
+
+def _usr001(name):
+    return os.path.join(BASE_DIR, "dataset", "USR001", name)
+
+
+def test_web_burst_rejects_a_held_photograph():
+    """The exact spoof: one enrolled photo held steady in front of the lens."""
+    from webapp.backend.auth import _count_blinks
+    frames = _burst(*([_usr001("USR001_014.jpg")] * 12))
+    blinks, best = _count_blinks(frames)
+    assert blinks == 0, f"a held photograph produced {blinks} blink(s)"
+    assert best is not None
+
+
+def test_web_burst_rejects_two_alternating_photos():
+    """Swapping between two open-eyed photos is movement, not a blink."""
+    from webapp.backend.auth import _count_blinks
+    frames = _burst(*([_usr001("USR001_014.jpg"), _usr001("USR001_012.jpg")] * 6))
+    assert _count_blinks(frames)[0] == 0
+
+
+def test_web_burst_accepts_a_real_blink():
+    """USR001_007.jpg has EAR 0.139 — genuinely closed eyes on a real person."""
+    from webapp.backend.auth import _count_blinks
+    frames = _burst(
+        _usr001("USR001_014.jpg"), _usr001("USR001_014.jpg"),
+        _usr001("USR001_007.jpg"), _usr001("USR001_007.jpg"),
+        _usr001("USR001_012.jpg"), _usr001("USR001_012.jpg"),
+    )
+    blinks, _ = _count_blinks(frames)
+    assert blinks >= config.LIVENESS_BLINK_REQUIRED, \
+        f"a real blink only counted {blinks}; real users would be locked out"
+
+
+def test_web_burst_picks_an_open_eyed_frame_for_recognition():
+    """Matching should not run on a mid-blink frame."""
+    import numpy as np
+    from webapp.backend.auth import _count_blinks
+    open_frame = _burst(_usr001("USR001_014.jpg"))[0]
+    frames = _burst(
+        _usr001("USR001_014.jpg"), _usr001("USR001_007.jpg"),
+        _usr001("USR001_007.jpg"), _usr001("USR001_012.jpg"),
+    )
+    _, best = _count_blinks(frames)
+    assert np.array_equal(best, open_frame), \
+        "the widest-open frame was not chosen for recognition"
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:
