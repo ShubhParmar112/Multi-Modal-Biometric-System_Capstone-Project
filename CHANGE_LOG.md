@@ -5,6 +5,65 @@ changed, how it was verified, and what was left undone.
 
 ---
 
+## 2026-08-02 — Pin a reproducible environment (requirements.lock.txt)
+
+**Problem.** Every constraint in `requirements.txt` was an unbounded `>=`, so
+a clean resolve picked numpy 2.5.1, OpenCV 5.0, mediapipe 1.0 and insightface
+1.0 — major versions across the whole CV stack that this project has never run
+on. The declarations were correct; the environment they produced was not the
+one that works.
+
+**Change.** Added `requirements.lock.txt`: all 93 packages at exact versions,
+generated from the working venv. `requirements.txt` remains the human-readable
+statement of intent. Install instructions in the README now point at the lock.
+
+`opencv-python` in `requirements.txt` became `opencv-contrib-python`, because
+contrib is the build that actually loads here (`cv2.xfeatures2d` is present)
+and therefore the one every test has exercised. The lock pins contrib only —
+all three OpenCV variants ship the same `cv2` and overwrite each other, so
+pinning all three would leave the resulting binary dependent on pip's install
+order, which is reproducibility in name only.
+
+**The lock must be installed with `--no-deps`.**
+
+```bash
+pip install --no-deps -r requirements.lock.txt
+```
+
+This was discovered by testing, not predicted. A plain `pip install -r` fails
+with `ResolutionImpossible`: OpenCV 4.13 declares `numpy>=2` while this stack
+pins numpy 1.26.4, since numpy 2.x breaks these compiled extensions. `pip
+check` flags the same conflict on the existing venv — **the working
+environment is not internally consistent by pip's metadata.** It runs fine;
+the ABI is compatible in practice. Because the lock is the complete closure,
+`--no-deps` is the correct install and succeeds.
+
+**Verified by building a real clean venv** (not a dry run):
+
+| Check | Result |
+|:--|:--|
+| `pip install --no-deps -r requirements.lock.txt` | exit 0, 93 packages |
+| `python -m scripts.smoke_test` under that interpreter | **13/13, 0 NEW** |
+| `import config`, `webapp.backend.main` | OK, 13 routes |
+| `cv2` with contrib only | 4.13.0, `SIFT_create` present |
+| `albumentations` / `insightface` import | OK |
+| InsightFace on an enrolled image | **uid=USR001, confidence=0.992** |
+
+**Known wrinkles.**
+
+- The lock is Windows + CPython 3.12 specific and will refuse to install
+  elsewhere. Deliberate: failing loudly beats silently substituting untested
+  wheels. Other platforms should use `requirements.txt` and re-verify.
+- Dropping `opencv-python-headless` leaves `albucore`/`albumentations` naming
+  it in `pip check`. Verified harmless — contrib supplies the same `cv2`, and
+  both import and run in the clean venv.
+- Pinning freezes the security posture; regenerate deliberately with
+  `pip freeze`, then drop the two non-contrib OpenCV lines.
+- Nothing was installed, uninstalled or upgraded in the project venv at any
+  point. The test venv was built outside the repo and deleted afterwards.
+
+---
+
 ## 2026-08-02 — Declare five undeclared dependencies
 
 **Problem.** Five packages were imported but absent from `requirements.txt`, so
