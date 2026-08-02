@@ -5,6 +5,87 @@ changed, how it was verified, and what was left undone.
 
 ---
 
+## 2026-08-02 — Lock the web login after repeated failures
+
+**Problem.** `/api/auth/login` verified the PIN and returned 401 on failure
+with no attempt limit. `config.MAX_PIN_ATTEMPTS = 3` existed but was enforced
+only in the Tkinter dialog (`ui/atm_interface.py`). PINs are 4 digits and user
+IDs are sequential (`USR001`…`USR021`), so the entire keyspace was walkable
+over HTTP against a guessable target.
+
+Demonstrated against the real endpoint before the fix:
+
+    3 wrong PINs -> [401, 401, 401], then the correct PIN -> 200
+
+**Why this was the highest-priority item.** The PIN is verified *before* the
+risk engine runs, so wrong PINs return a bare 401 and never reach it. A fast
+brute force does trip the failed-attempts signal, so the correct PIN yields a
+2FA challenge demanding a face — but `/api/auth/face-verify` has no liveness
+check, so a photograph satisfies it. Brute force → challenge → photo →
+session. Neither half is a clean takeover alone; together they are.
+
+**Change.** The lockout check runs **before** `verify_pin` and refuses a locked
+account even when the PIN is correct. Checking afterwards would admit the
+attacker on the one guess that matters.
+
+It reuses `count_recent_failed_logins` — the same rolling-window counter the
+risk engine reads — so there is a single definition of "recent failed login".
+Because the window rolls, the lock frees itself 15 minutes after the last
+failure: no unlock endpoint, no new column, no new state.
+
+Lockout hits log `result='lockout'`, deliberately **not** `'failure'`. The
+counter only counts `'failure'`, so a sustained attack cannot keep pushing the
+window forward and hold an account locked indefinitely. Verified: five extra
+hits against a locked account left the count at three.
+
+Returns **429** with `Retry-After` rather than 401, so a client can distinguish
+"wrong PIN" from "stop trying", and the message names neither the account nor
+the PIN.
+
+**Commits.**
+
+| Commit | Change |
+|:--|:--|
+| `496d1d6` | Failing smoke check driving the real endpoint |
+| `7c12cdd` | The lockout itself (`config.py`, `webapp/backend/auth.py`) |
+
+**Verified** against a copy of the database, driving the real endpoint:
+
+| Check | Result |
+|:--|:--|
+| 3 wrong PINs | 401, 401, 401 |
+| then the **correct** PIN | **429**, `Retry-After: 900` |
+| message leaks account state? | no |
+| a second user, correct PIN | 200 — unaffected |
+| 5 further hits on the locked account | counted failures still 3 |
+| after the window elapses | 200 — self-healed |
+| nonexistent user | 401, no crash |
+
+Smoke test 14/14, `web login lockout` moved from known-bad to passing and was
+removed from the baseline, so it now guards against regression.
+
+**Known trade-off.** Anyone can lock any account by sending three bad PINs to
+a guessable user ID. That is inherent to per-user lockout and the sequential
+IDs make it easier; the self-healing 15-minute window is the compromise.
+Keying on user+IP would soften the DoS but gut the defence it exists for.
+
+**Still open.**
+
+- **`/api/auth/face-verify` has no liveness check**, so the second half of the
+  chain above is intact: a photograph still satisfies the face step-up. The
+  lockout makes reaching that step much harder; it does not close it.
+- `/api/settings/change-pin` is a second unlimited PIN oracle. Its failures
+  log as `pin_change`, so this counter does not see them. It requires a valid
+  session first, so severity is lower. Deliberately left out of scope.
+- **Audit blind spot:** `auth_logs.user_id` has a foreign key to `users` and
+  `PRAGMA foreign_keys = ON`, so a failed login against a *nonexistent* user
+  ID cannot be written and `log_auth_event` swallows the error. User-ID
+  enumeration attempts are therefore invisible in the audit trail.
+- The ATM dialog still counts attempts in memory, per dialog, with no
+  server-side lock.
+
+---
+
 ## 2026-08-02 — Pin a reproducible environment (requirements.lock.txt)
 
 **Problem.** Every constraint in `requirements.txt` was an unbounded `>=`, so
