@@ -5,6 +5,95 @@ changed, how it was verified, and what was left undone.
 
 ---
 
+## 2026-08-02 — Require a blink on the face step-up
+
+**Problem.** `/api/auth/face-verify` took a single frame and matched it, with
+no liveness check. Demonstrated against the real endpoint before the fix:
+
+    enrolled photo of USR001 -> HTTP 200, full session token
+
+That made the face challenge worthless as a second factor. The PIN is checked
+before the risk engine runs, so once the lockout is survived a correct PIN
+yields a face challenge — and a photograph satisfied it. PIN guessing plus a
+photo was a complete takeover. The lockout closed the guessing half; this
+closes the rest.
+
+**Change.** The endpoint takes a burst of frames and counts blinks across it
+using `LivenessDetector.update_blink_state` — the same state machine the ATM
+uses, extracted and tested in the earlier liveness fix. A still photograph
+produces a perfectly constant EAR and can never blink.
+
+Liveness runs **before** recognition, and only the single best frame (highest
+EAR, eyes widest open) goes to InsightFace. Recognition is the expensive step
+and there is no point running it on frames already known to be a photo; it
+also means `_face_lock` is still held for exactly one inference, so the burst
+does not lengthen the serialised section. MediaPipe runs on a per-request
+detector (~36 ms warm), so it needs no lock at all. Total ≈ 20 × 14 ms +
+294 ms, under 600 ms against a 45 s client timeout.
+
+`FaceVerifyRequest.image` became `.images` — a **breaking API change**. The
+old single-frame shape is deliberately rejected: one frame cannot contain a
+blink, so accepting it could only produce confusing failures.
+
+**Commits.**
+
+| Commit | Change |
+|:--|:--|
+| `7e2b5e4` | Failing check: a photograph completes face 2FA today |
+| `8d8660c` | Require a blink before matching (server) |
+| `a436af9` | Burst capture and the blink prompt (frontend) |
+| `b84cf20` | Tests for the burst aggregation |
+
+**Verified against the real endpoint**, using real photos of a real enrolled
+user. `USR001_007.jpg` measures EAR 0.139 — genuinely closed eyes — which is
+what made an honest blink sequence possible without a webcam:
+
+| Burst | Result |
+|:--|:--|
+| still photo held steady ×20 | **401** |
+| two photos alternating, no closed eyes | **401** |
+| single closed frame (too brief) | **401** |
+| open, open, CLOSED, CLOSED, open, open | **200**, session issued for USR001 |
+| blink mid-way through an 18-frame burst | **200** |
+
+Smoke test 15/15; `tests/test_liveness.py` 15/15; `vite build` succeeds; the
+login page renders with no console errors.
+
+**Frontend.** 20 frames at 120 ms (~2.4 s). The interval is the load-bearing
+number: a blink lasts 100–400 ms and must span at least `EYE_AR_CONSEC_FRAMES`
+(2) captured frames, so sampling much slower drops fast blinks and locks out
+real people. The panel says to blink *before* capture starts, the button reads
+"Blink to Verify", and per-frame progress stops the 2.4 s looking like a hang.
+
+**What this does NOT do.** A blink check does not defeat a **video replay** —
+someone playing a video of the account holder blinking passes it. It raises
+the bar from "any photo in your camera roll" to "a video of the target
+blinking", which is real but not strong. Genuine anti-spoofing needs depth, IR
+or texture analysis this hardware does not have.
+
+**Availability cost, stated plainly.** 2FA fires on new devices and networks,
+so this sits on the path of someone already having an unusual login. In a dim
+room, with strong backlight, or with glasses glare, MediaPipe may not see the
+face — and then the user cannot complete 2FA at all. They can retry until the
+5-minute challenge expires, then start again with their PIN. If this locks
+real users out in practice, the thresholds are the thing to revisit.
+
+**Not verified.** No real webcam, no real face, no real printed photo, no
+video replay. Every result above comes from still images. Needs a human:
+
+1. Sign in with a PIN from a new device so the risk engine demands the face
+   step-up, then blink when prompted → must succeed.
+2. Repeat holding a phone photo of the enrolled user to the camera, without
+   blinking → must fail with the liveness message.
+3. Repeat in a dim room and with glasses on → confirm real users still pass.
+4. Let the capture run without blinking → must fail, and the retry must work.
+
+**Still open.** `/api/auth/face-login` (passwordless) remains single-frame with
+no liveness and no confidence floor, by your decision. It is a strictly weaker
+surface than the one just fixed.
+
+---
+
 ## 2026-08-02 — Lock the web login after repeated failures
 
 **Problem.** `/api/auth/login` verified the PIN and returned 401 on failure
