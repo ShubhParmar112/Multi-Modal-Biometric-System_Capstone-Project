@@ -4,6 +4,8 @@ All system-wide constants and settings are defined here.
 """
 
 import os
+import secrets
+
 from dotenv import load_dotenv
 
 # Load .env (if present) before anything else reads os.environ
@@ -150,8 +152,40 @@ EMAIL_FROM_NAME = "SmartBank Alerts"
 # ============================================================
 # WEB APP SETTINGS
 # ============================================================
-# Dev-only default secret — override via the JWT_SECRET env var in production.
-JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-in-production")
+# JWT signing key. Set JWT_SECRET in .env (see .env.example) for a stable,
+# deployable key. When it is unset we generate a random one and cache it in a
+# gitignored file, so sessions survive restarts and --reload cycles.
+#
+# There is deliberately NO constant fallback here. A default committed to the
+# repository is identical on every machine that runs this code, which lets
+# anyone who has seen the source forge a token for any user_id.
+JWT_SECRET_FILE = os.path.join(BASE_DIR, ".jwt_secret")
+
+
+def _generated_jwt_secret() -> str:
+    """Read the cached dev secret, creating it on first use."""
+    try:
+        if os.path.exists(JWT_SECRET_FILE):
+            with open(JWT_SECRET_FILE, encoding="utf-8") as fh:
+                cached = fh.read().strip()
+            if cached:
+                return cached
+        generated = secrets.token_urlsafe(32)
+        with open(JWT_SECRET_FILE, "w", encoding="utf-8") as fh:
+            fh.write(generated)
+        return generated
+    except OSError:
+        # Read-only filesystem, or no permission. Stay ephemeral rather than
+        # fall back to a shared constant: tokens then die with the process,
+        # which costs a re-login but is never forgeable.
+        return secrets.token_urlsafe(32)
+
+
+_jwt_secret_env = os.environ.get("JWT_SECRET")
+# True when no JWT_SECRET was supplied, i.e. we are running on a generated
+# key. The web app warns about this at startup; nothing else should care.
+JWT_SECRET_IS_GENERATED = not _jwt_secret_env
+JWT_SECRET = _jwt_secret_env or _generated_jwt_secret()
 
 # ============================================================
 # AI ADVISOR (Groq — Llama 3.3 70B)
