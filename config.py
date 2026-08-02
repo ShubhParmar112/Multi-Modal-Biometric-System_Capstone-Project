@@ -74,6 +74,17 @@ FINGERPRINT_ORB_FEATURES = 3000      # Number of SIFT features to extract (was 1
 # AUTHENTICATION SETTINGS
 # ============================================================
 MAX_PIN_ATTEMPTS = 3
+# Look-back for the web-login lockout. The counter is a rolling window over
+# auth_logs, so a locked account frees itself this many minutes after its last
+# failed attempt — no unlock endpoint and no extra state to store. Matches
+# RISK_FAILED_ATTEMPTS_WINDOW_MIN so the risk engine and the lockout reason
+# about the same stretch of time.
+#
+# Note the interaction: RISK_FAILED_ATTEMPTS_TRIGGER (2) is below
+# MAX_PIN_ATTEMPTS (3), so failure 2 arms the risk engine's step-up and
+# failure 3 locks the account. Lowering MAX_PIN_ATTEMPTS to 2 or less would
+# make that step-up unreachable.
+LOGIN_LOCKOUT_WINDOW_MIN = 15
 PIN_LENGTH = 4
 SESSION_TIMEOUT = 30                  # Seconds before session expires
 CARD_ENTRY_TIMEOUT = 60                # Seconds to wait for card number entry

@@ -175,6 +175,26 @@ def _decode_frame(image: str):
 @router.post("/login")
 def login(req: LoginRequest, request: Request,
           db: DatabaseManager = Depends(get_db)):
+    # Lockout FIRST, before the PIN is even checked. A locked account must be
+    # refused even when the PIN is correct — otherwise an attacker who walks
+    # the 4-digit keyspace is let straight in on the guess that happens to be
+    # right, and the limit protects nothing. Reuses the same rolling-window
+    # counter the risk engine reads, so there is one definition of "recent
+    # failed login" in the system.
+    if req.user_id:
+        recent_failures = db.count_recent_failed_logins(
+            req.user_id, config.LOGIN_LOCKOUT_WINDOW_MIN)
+        if recent_failures >= config.MAX_PIN_ATTEMPTS:
+            db.log_auth_event(req.user_id, "web_login", "lockout",
+                              f"{recent_failures} failures in "
+                              f"{config.LOGIN_LOCKOUT_WINDOW_MIN} min")
+            raise HTTPException(
+                status_code=429,
+                detail=(f"Too many failed attempts. Try again in about "
+                        f"{config.LOGIN_LOCKOUT_WINDOW_MIN} minutes."),
+                headers={"Retry-After": str(config.LOGIN_LOCKOUT_WINDOW_MIN * 60)},
+            )
+
     user = db.get_user(req.user_id)
     if not user or not db.verify_pin(req.user_id, req.pin):
         db.log_auth_event(req.user_id or "UNKNOWN", "web_login", "failure",
