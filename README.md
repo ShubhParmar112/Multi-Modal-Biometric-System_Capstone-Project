@@ -42,7 +42,8 @@ With **anti-spoofing** via liveness detection (blink detection using Eye Aspect 
 try1/
 ├── main.py                          # Entry point (CLI + UI launcher)
 ├── config.py                        # All system configuration
-├── requirements.txt                 # Python dependencies
+├── requirements.txt                 # Python dependencies (declared, loose)
+├── requirements.lock.txt            # Pinned known-good versions (use this)
 │
 ├── face_recognition_module/         # Computer Vision subsystem
 │   ├── __init__.py
@@ -127,6 +128,20 @@ try1/
 ## 🚀 Quick Start
 
 ### 1. Install Python Dependencies
+
+Reproduce the environment this project is known to work in (Windows,
+CPython 3.12):
+```bash
+pip install -r requirements.lock.txt
+```
+
+`requirements.lock.txt` pins every package to an exact, tested version. It is
+platform- and Python-specific by design, and will refuse to install elsewhere
+rather than silently substituting untested wheels.
+
+On a different OS or Python version, install the loose declarations instead
+and expect to re-verify — an unbounded resolve currently picks numpy 2.x,
+OpenCV 5 and mediapipe 1.0, which this project has not been tested against:
 ```bash
 pip install -r requirements.txt
 ```
