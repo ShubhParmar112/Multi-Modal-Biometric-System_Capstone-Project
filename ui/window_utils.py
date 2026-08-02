@@ -3,17 +3,8 @@
 import tkinter as tk
 
 
-def maximize(window) -> None:
-    """Open `window` maximized to fill the screen.
-
-    "zoomed" is the state name Windows and most Linux window managers use.
-    A few X11 WMs only accept the "-zoomed" attribute instead, and some
-    accept neither — in that case we size the window to the screen ourselves
-    so it still fills the display rather than silently staying small.
-
-    Any geometry() set before this call remains the window's restore size,
-    so un-maximizing returns to the designed layout size.
-    """
+def _apply_maximize(window) -> None:
+    """Put `window` into its platform's maximized state."""
     try:
         window.state("zoomed")
         return
@@ -28,3 +19,20 @@ def maximize(window) -> None:
 
     window.geometry(
         f"{window.winfo_screenwidth()}x{window.winfo_screenheight()}+0+0")
+
+
+def maximize(window) -> None:
+    """Open `window` maximized to fill the screen.
+
+    Deferred to the first event-loop tick rather than applied immediately.
+    CTk.mainloop() withdraws the window and calls deiconify() before entering
+    the loop (customtkinter/windows/ctk_tk.py), and deiconify() restores the
+    window to the *normal* state — so a "zoomed" set during __init__ is
+    silently discarded, and the window opens maximized then shrinks. Callbacks
+    queued with after() before mainloop() still run once the loop starts,
+    which is after that deiconify.
+
+    Any geometry() set beforehand remains the restore size, so un-maximizing
+    returns to the designed layout size.
+    """
+    window.after(0, lambda: _apply_maximize(window))
