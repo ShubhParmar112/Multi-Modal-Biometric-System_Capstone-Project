@@ -28,6 +28,7 @@ import customtkinter as ctk
 
 import config
 from database.db_manager import DatabaseManager
+from ui import window_utils
 from utils.logger import logger
 
 # Shared design system — palette + icon renderer from the ATM dashboard.
@@ -68,6 +69,8 @@ class BankerInterface:
         self.root.geometry(f"{config.WINDOW_WIDTH}x{config.WINDOW_HEIGHT}")
         self.root.minsize(config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
         self.root.configure(fg_color=BG)
+        # Start maximized; the geometry above stays the restore size.
+        window_utils.maximize(self.root)
 
         self.db = DatabaseManager()
         self._icon_cache = {}

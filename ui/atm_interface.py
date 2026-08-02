@@ -16,6 +16,7 @@ from PIL import Image, ImageTk
 from typing import Optional, Callable
 
 import config
+from ui import window_utils
 from utils.logger import logger
 from auth.fusion_engine import FusionEngine, AuthStage
 from face_recognition_module.face_recognizer import FaceRecognizer
@@ -43,6 +44,8 @@ class ATMInterface:
         self.root.resizable(True, True)
         self.root.minsize(config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
         self.root.configure(fg_color=config.SECONDARY_COLOR)
+        # Start maximized; the geometry above stays the restore size.
+        window_utils.maximize(self.root)
 
         # ── State Variables ──────────────────────────────────
         self.cap: Optional[cv2.VideoCapture] = None
