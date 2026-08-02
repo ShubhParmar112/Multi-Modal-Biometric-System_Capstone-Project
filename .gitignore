@@ -13,3 +13,4 @@ venv/
 portfolio/market_cache.json
 portfolio/picks_cache.json
 PROJECT_SUMMARY.md
+.smoke_baseline.json
