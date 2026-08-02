@@ -223,6 +223,9 @@ auth_logs (
 ## 🔐 Security Considerations
 
 - PINs stored as SHA-256 hashes (not reversible)
+- Web sessions signed with `JWT_SECRET` — set it in `.env` (see `.env.example`).
+  Left unset, a random per-machine key is generated into `.jwt_secret`; the app
+  warns at startup and the key must not be relied on for a deployment.
 - Face encodings are 128-d vectors (cannot reconstruct face)
 - All processing done locally (no cloud, no internet)
 - Audit trail for forensic analysis
