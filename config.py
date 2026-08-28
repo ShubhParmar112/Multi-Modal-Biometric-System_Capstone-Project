@@ -212,12 +212,15 @@ JWT_SECRET_IS_GENERATED = not _jwt_secret_env
 JWT_SECRET = _jwt_secret_env or _generated_jwt_secret()
 
 # ============================================================
-# AI ADVISOR (Groq — Llama 3.3 70B)
+# AI ADVISOR (Groq)
 # ============================================================
-# NOTE: llama-3.1-70b-versatile was decommissioned by Groq; 3.3 is the
-# current versatile model. Override via the GROQ_MODEL env var if needed.
+# NOTE: Groq retires models on its own schedule. llama-3.1-70b-versatile went
+# first, then llama-3.3-70b-versatile (confirmed absent from the account's model
+# list on 2026-08-29, which surfaced as a "model no longer available" reply in
+# the advisor). Keep this default on a model Groq currently serves and override
+# it with GROQ_MODEL in .env when it lapses again.
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL   = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL   = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_TIMEOUT = 30                     # Seconds before an advisor LLM call is abandoned
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60

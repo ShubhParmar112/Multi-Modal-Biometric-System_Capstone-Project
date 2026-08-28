@@ -228,8 +228,9 @@ def answer(user_id: str, question: str, history: list,
         detail = str(e)
         if "decommissioned" in detail or "model_not_found" in detail:
             return ("The configured AI model is no longer available on Groq. "
-                    "Set GROQ_MODEL in .env to a current model "
-                    "(e.g. llama-3.3-70b-versatile) and restart the server.")
+                    "Set GROQ_MODEL in .env to a model Groq still serves "
+                    "(e.g. openai/gpt-oss-120b) and restart the server. "
+                    "The current list is at console.groq.com/docs/models.")
         return "Sorry, I couldn't reach the AI service right now. Please try again in a moment."
 
 
