@@ -9,9 +9,10 @@ Eye Aspect Ratio (EAR) indices from the 478-landmark model:
 """
 
 import os
+from collections import deque
 import cv2
 import numpy as np
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import config
 from utils.logger import logger
@@ -46,10 +47,20 @@ class LivenessDetector:
     A real person must blink LIVENESS_BLINK_REQUIRED times to pass.
     """
 
+    # Upper bound on the retained EAR trajectory. A 15 s ATM check at ~20 fps
+    # is ~300 frames and a web burst is 20, so this holds a whole attempt with
+    # room to spare while keeping memory bounded if a detector is reused across
+    # many checks without reset().
+    _MAX_HISTORY = 512
+
     def __init__(self):
         self.blink_count = 0
         self._consec_closed = 0
         self._detector   = None  # FaceLandmarker (Tasks API)
+        # EAR per frame fed to update_blink_state, None where no face was seen.
+        # Descriptive only — the blink state machine does not read it, so the
+        # liveness verdict is exactly what it was before this existed.
+        self._ear_history = deque(maxlen=self._MAX_HISTORY)
 
     # ─────────────────────────────────────────────────────────────
     # Detector initialisation
@@ -173,6 +184,8 @@ class LivenessDetector:
         Losing the face mid-blink therefore costs the user that blink and
         they must blink again; that is the intended trade.
         """
+        self._ear_history.append(ear)
+
         if ear is None:
             self._consec_closed = 0
             return False
@@ -192,3 +205,38 @@ class LivenessDetector:
         """Reset blink counter and state for a new liveness check."""
         self.blink_count = 0
         self._consec_closed = 0
+        self._ear_history.clear()
+
+    # ─────────────────────────────────────────────────────────────
+    # Trajectory (descriptive — does not affect the liveness verdict)
+    # ─────────────────────────────────────────────────────────────
+
+    @property
+    def ear_history(self) -> List[Optional[float]]:
+        """EAR per frame since the last reset(), None where no face was seen."""
+        return list(self._ear_history)
+
+    def trajectory_stats(self) -> Dict[str, float]:
+        """Descriptive statistics over the EAR trajectory.
+
+        Liveness stays a veto rather than a fused term, so these do not enter
+        any weighted sum. They serve two other purposes: recording how
+        confidently liveness was established, and devaluing a face sample taken
+        during a burst where the face was mostly not visible.
+
+        ear_variance is the discriminative one — a still photograph produces a
+        perfectly constant EAR, so near-zero variance is itself evidence of a
+        static presentation.
+        """
+        from auth.fusion.quality import liveness_quality
+        return liveness_quality(self.ear_history)
+
+    def observation(self):
+        """The trajectory and verdict as a LivenessObservation."""
+        from auth.fusion.scores import LivenessObservation
+        return LivenessObservation(
+            blink_count=self.blink_count,
+            required=config.LIVENESS_BLINK_REQUIRED,
+            ear_history=self.ear_history,
+            quality=self.trajectory_stats(),
+        )

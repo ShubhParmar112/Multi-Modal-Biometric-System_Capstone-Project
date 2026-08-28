@@ -15,3 +15,6 @@ portfolio/picks_cache.json
 PROJECT_SUMMARY.md
 .smoke_baseline.json
 .jwt_secret
+# Regenerable evaluation artifacts (figures, sweeps, extraction cache).
+# Collected measurements live in evaluation/data/ and ARE tracked.
+evaluation/output/

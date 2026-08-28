@@ -177,7 +177,15 @@ def _core_modules_import():
     import importlib
     for mod in ("database.db_manager", "banking.account_manager",
                 "auth.risk_engine", "fraud_detection.detector",
-                "webapp.backend.auth", "webapp.backend.schemas"):
+                "webapp.backend.auth", "webapp.backend.schemas",
+                # The ATM pipeline and the modules feeding it. Previously
+                # uncovered, which meant a syntax or import error in the
+                # customer-facing UI would not surface until launch.
+                "ui.atm_interface",
+                "face_recognition_module.face_recognizer",
+                "face_recognition_module.liveness_detector",
+                "fingerprint_module.image_matcher",
+                "fingerprint_module.serial_handler"):
         importlib.import_module(mod)
 
 
@@ -366,6 +374,152 @@ def _jwt_round_trip():
         pass
     else:
         raise AssertionError("a token signed with another secret was accepted")
+
+
+# ── Fusion plumbing (step 3) ─────────────────────────────────
+# The plumbing adds data without changing behaviour. These guard the "without
+# changing behaviour" half, which is the part that could break the ATM.
+
+
+@check("fusion package is inert")
+def _fusion_is_inert():
+    """auth.fusion must not decide anything yet, and must stay importable
+    without pulling in models, the database, or config side effects."""
+    from auth.fusion import quality, scores
+    import config
+
+    assert not hasattr(config, "FUSION_DECIDES") or not config.FUSION_DECIDES, \
+        "fusion has been given decision authority; that is step 6"
+    # Containers must default to 'nothing measured', never to a usable score.
+    assert not scores.FaceObservation().available
+    assert not scores.FingerprintObservation().available
+    assert quality.fingerprint_quality() == {}
+
+
+@check("legacy recognition/scan APIs keep their shapes")
+def _legacy_api_shapes_unchanged():
+    """ui/atm_interface.py unpacks fixed-width tuples from these three calls.
+    Widening any of them would break the ATM at runtime, not at import."""
+    import inspect
+    from face_recognition_module.face_recognizer import FaceRecognizer
+    from fingerprint_module.image_matcher import FingerprintImageMatcher
+    from fingerprint_module.serial_handler import SerialHandler
+
+    expected = {
+        FaceRecognizer.recognize_from_frame: ["self", "frame"],
+        FingerprintImageMatcher.match: ["self", "image_path", "threshold"],
+        SerialHandler.request_fingerprint_scan:
+            ["self", "timeout", "expected_user_id"],
+    }
+    for fn, params in expected.items():
+        actual = list(inspect.signature(fn).parameters)
+        assert actual == params, \
+            f"{fn.__qualname__} signature changed: {actual} != {params}"
+
+    # An unloaded recognizer short-circuits without needing a model.
+    import numpy as np
+    result = FaceRecognizer().recognize_from_frame(np.zeros((8, 8, 3), np.uint8))
+    assert result == (None, 0.0, None), \
+        f"legacy recognition return shape changed: {result!r}"
+
+
+@check("liveness verdict is unchanged by trajectory recording")
+def _liveness_verdict_unchanged():
+    """Step 3 records the EAR trajectory. The blink state machine must not read
+    it — the anti-spoofing contract from 2026-08-02 depends on that."""
+    import config
+    from face_recognition_module.liveness_detector import LivenessDetector
+
+    consec = config.EYE_AR_CONSEC_FRAMES
+    detector = LivenessDetector()
+    detector.reset()
+    for ear in [0.31] + [0.10] * consec + [0.31]:
+        detector.update_blink_state(ear)
+    assert detector.blink_count == 1, "a real blink stopped counting"
+
+    detector.reset()
+    for ear in [0.31] + [0.10] * consec + [None, 0.31]:
+        detector.update_blink_state(ear)
+    assert detector.blink_count == 0, \
+        "losing the face mid-blink now counts as a blink — photo attack reopened"
+
+
+@check("quality metrics have a single implementation")
+def _quality_not_duplicated():
+    """evaluation/extract.py must import the shared metrics rather than keep a
+    copy. Two implementations would drift and invalidate the step-1 numbers
+    that step 4 fuses against."""
+    import evaluation.extract as extract
+    from auth.fusion.quality import face_quality
+
+    assert extract.face_quality is face_quality, \
+        "the harness is no longer using auth/fusion/quality.py"
+
+
+# ── Fingerprint serial protocol ──────────────────────────────
+
+
+@check("fingerprint protocol parses both firmware generations")
+def _fingerprint_protocol_compatible():
+    """The firmware is flashed by hand on a separate device, so the host and
+    the sensor can be out of step in either direction. Both forms must parse,
+    and an absent score must read as None rather than 0 — treating "not
+    measured" as "measured as bad" would score every genuine user on an
+    unflashed sensor as a maximally poor match."""
+    from fingerprint_module.serial_handler import SerialHandler
+
+    assert SerialHandler._parse_match_detailed("MATCH:12:145") == (12, True, 145)
+    assert SerialHandler._parse_match_detailed("MATCH:12") == (12, True, None)
+    assert SerialHandler._parse_match_response("MATCH:12:145") == (12, True), \
+        "the two-value API used by ui/atm_interface.py:682 changed shape"
+    # What an un-updated host does with new firmware's output.
+    assert int("MATCH:12:145".split(":")[1]) == 12, \
+        "flashing the sensor would break hosts that have not been updated"
+
+
+# ── Evaluation harness ───────────────────────────────────────
+# The harness is offline-only: it must never acquire a dependency on the live
+# auth path, and its decision replica must not drift from the original.
+
+
+@check("evaluation harness imports")
+def _evaluation_imports():
+    for name in ("evaluation.metrics", "evaluation.pairs",
+                 "evaluation.protocols", "evaluation.plots",
+                 "evaluation.extract", "evaluation.face_eval"):
+        __import__(name)
+
+
+@check("evaluation decision replica matches face_recognizer")
+def _evaluation_replica_matches():
+    """protocols.decide() reimplements face_recognizer.recognize_from_frame's
+    scoring so it can be swept. If the original's arithmetic changes and this
+    is not updated, every reported number silently describes the old rule."""
+    import numpy as np
+    from evaluation.protocols import decide
+
+    # One gallery entry at exactly the tolerance, matching a single user:
+    # confidence = 1-0.40 = 0.60, vote = 1.0 -> 0.6*0.60 + 0.4*1.0 = 0.76
+    predicted, confidence = decide(np.array([0.40]), np.array(["USR001"]),
+                                   tolerance=0.40, min_confidence=0.6)
+    assert predicted == "USR001", f"expected a match, got {predicted!r}"
+    assert abs(confidence - 0.76) < 1e-6, (
+        f"blend produced {confidence}, expected 0.76 — the replica and "
+        f"face_recognizer.py:151 have diverged")
+
+
+@check("evaluation harness stays off the live auth path")
+def _evaluation_is_offline():
+    """Nothing in the running system may import the harness. If this fails,
+    an offline analysis tool has become load-bearing for authentication."""
+    import subprocess
+    hits = subprocess.run(
+        ["git", "grep", "-l", "-E", r"^\s*(from|import)\s+evaluation",
+         "--", "auth", "ui", "webapp", "database", "banking",
+         "face_recognition_module", "fingerprint_module", "main.py"],
+        capture_output=True, text=True, cwd=BASE_DIR)
+    assert not hits.stdout.strip(), (
+        f"live modules import the evaluation harness: {hits.stdout.strip()}")
 
 
 # ── Runner ───────────────────────────────────────────────────

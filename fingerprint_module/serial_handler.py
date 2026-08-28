@@ -19,8 +19,14 @@ class SerialHandler:
     Manages serial communication with ESP32 for fingerprint data.
 
     Protocol (ESP32 → Python):
-        MATCH:<fingerprint_id>     → Fingerprint matched, returns ID
-        NO_MATCH                    → No fingerprint match
+        MATCH:<fingerprint_id>:<confidence>
+                                    → Fingerprint matched, with the sensor's
+                                      match score (higher = closer match)
+        MATCH:<fingerprint_id>      → Same, from firmware predating the score
+                                      field. Still accepted; score reads None.
+        NO_MATCH                    → No fingerprint match (no score: the
+                                      sensor reports none below its internal
+                                      threshold)
         ENROLL_OK:<fingerprint_id>  → Enrollment successful
         ENROLL_FAIL                 → Enrollment failed
         DELETE_OK:<fingerprint_id>  → Template deletion successful
@@ -43,6 +49,9 @@ class SerialHandler:
         self._listener_thread: Optional[threading.Thread] = None
         self._listening = False
         self._callback: Optional[Callable] = None
+        # Match score from the most recent scan, or None when the firmware
+        # does not report one (see request_fingerprint_scan_detailed).
+        self.last_match_confidence: Optional[int] = None
 
     def connect(self) -> bool:
         """
@@ -207,15 +216,46 @@ class SerialHandler:
 
         Returns:
             Tuple of (fingerprint_id or None, is_match: bool)
+
+        The sensor's match score is not in the return value, so that this
+        signature stays exactly as every existing caller expects. Read it from
+        `last_match_confidence` afterwards, or call
+        request_fingerprint_scan_detailed() to get it directly.
+        """
+        fp_id, is_match, _confidence = self.request_fingerprint_scan_detailed(
+            timeout, expected_user_id)
+        return fp_id, is_match
+
+    def request_fingerprint_scan_detailed(
+            self, timeout: float = None,
+            expected_user_id: str = None) -> Tuple[
+                Optional[int], bool, Optional[int]]:
+        """
+        As request_fingerprint_scan(), but also returns the sensor's match
+        score.
+
+        Returns:
+            Tuple of (fingerprint_id or None, is_match, confidence or None)
+
+        `confidence` is the R307S's own match score — higher is a closer match.
+        It is None when the firmware predates the score-reporting protocol, in
+        simulation mode, or on any non-match: the sensor reports no score below
+        its internal threshold, which censors the low end of the impostor
+        distribution. That censoring is a known and documented limitation of
+        the collection protocol, not an oversight.
         """
         timeout = timeout or config.FINGERPRINT_TIMEOUT
+        self.last_match_confidence = None
 
         if config.SIMULATION_MODE:
-            return self._simulate_fingerprint_scan(expected_user_id)
+            fp_id, is_match = self._simulate_fingerprint_scan(expected_user_id)
+            # No sensor ran, so there is no score to report. Synthesising one
+            # here would put fabricated numbers into an evaluation dataset.
+            return fp_id, is_match, None
 
         # Send scan command
         if not self.send_command("SCAN"):
-            return None, False
+            return None, False, None
 
         # Wait for response
         start_time = time.time()
@@ -225,14 +265,19 @@ class SerialHandler:
                 if response == "PLACE_FINGER":
                     logger.info("Sensor is ready. Please place your finger.")
                     continue
-                    
-                result = self._parse_match_response(response)
-                if result != (None, False) or response == "NO_MATCH" or response == "SENSOR_ERROR":
-                    return result
+
+                fp_id, is_match, confidence = self._parse_match_detailed(response)
+                if ((fp_id, is_match) != (None, False)
+                        or response == "NO_MATCH"
+                        or response == "SENSOR_ERROR"):
+                    self.last_match_confidence = confidence
+                    if is_match and confidence is not None:
+                        logger.info(f"Fingerprint match score: {confidence}")
+                    return fp_id, is_match, confidence
             time.sleep(0.1)
 
         logger.warning("Fingerprint scan timed out")
-        return None, False
+        return None, False, None
 
     def request_enrollment(self, fingerprint_id: int,
                            timeout: float = 30) -> bool:
@@ -316,6 +361,53 @@ class SerialHandler:
         return False
 
     @staticmethod
+    def _parse_match_detailed(response: str) -> Tuple[
+            Optional[int], bool, Optional[int]]:
+        """
+        Parse a fingerprint match response, keeping the sensor's match score.
+
+        Accepted formats — both, deliberately:
+            MATCH:<id>:<confidence>  → (id, True, confidence)   current firmware
+            MATCH:<id>               → (id, True, None)         older firmware
+            NO_MATCH                 → (None, False, None)
+            SENSOR_ERROR             → (None, False, None)
+
+        Tolerating the old two-field form matters: the firmware lives on a
+        separate device that is flashed by hand, so a host update and a sensor
+        update can never be assumed to land together. A missing score is
+        reported as None rather than 0 — "not measured" and "measured as zero"
+        must not collapse into the same value, or fusion would read an
+        unflashed sensor as a maximally bad match.
+        """
+        if response.startswith("MATCH:"):
+            parts = response.split(":")
+            try:
+                fp_id = int(parts[1])
+            except (ValueError, IndexError):
+                logger.error(f"Invalid MATCH response: {response}")
+                return None, False, None
+
+            confidence = None
+            if len(parts) > 2:
+                try:
+                    confidence = int(parts[2])
+                except ValueError:
+                    # A malformed score must not sink an otherwise valid match.
+                    logger.warning(
+                        f"Unparseable confidence in {response!r}; "
+                        f"treating the score as unavailable")
+            return fp_id, True, confidence
+
+        if response == "NO_MATCH":
+            return None, False, None
+        if response == "SENSOR_ERROR":
+            logger.error("Fingerprint sensor error reported by ESP32")
+            return None, False, None
+
+        logger.warning(f"Unexpected response: {response}")
+        return None, False, None
+
+    @staticmethod
     def _parse_match_response(response: str) -> Tuple[Optional[int], bool]:
         """
         Parse a fingerprint match response from ESP32.
@@ -323,22 +415,13 @@ class SerialHandler:
         Expected formats:
             MATCH:<id>  → (id, True)
             NO_MATCH    → (None, False)
+
+        Retained with its original signature and behaviour; the match score is
+        available from _parse_match_detailed().
         """
-        if response.startswith("MATCH:"):
-            try:
-                fp_id = int(response.split(":")[1])
-                return fp_id, True
-            except (ValueError, IndexError):
-                logger.error(f"Invalid MATCH response: {response}")
-                return None, False
-        elif response == "NO_MATCH":
-            return None, False
-        elif response == "SENSOR_ERROR":
-            logger.error("Fingerprint sensor error reported by ESP32")
-            return None, False
-        else:
-            logger.warning(f"Unexpected response: {response}")
-            return None, False
+        fp_id, is_match, _confidence = SerialHandler._parse_match_detailed(
+            response)
+        return fp_id, is_match
 
     def _simulate_response(self) -> str:
         """Simulate a response for testing without hardware."""

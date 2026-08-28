@@ -19,8 +19,13 @@
  * Serial Protocol (ESP32 ↔ Python):
  *   ESP32 → Python:
  *     READY                    → Sensor initialized
- *     MATCH:<id>               → Fingerprint matched with ID
- *     NO_MATCH                 → Fingerprint not found
+ *     MATCH:<id>:<confidence>  → Fingerprint matched with ID, plus the
+ *                                sensor's match score (higher = better).
+ *                                Older firmware emitted "MATCH:<id>" with no
+ *                                score; both forms parse correctly.
+ *     NO_MATCH                 → Fingerprint not found (no score is reported —
+ *                                the sensor returns none below its internal
+ *                                threshold, which censors low match scores)
  *     ENROLL_OK:<id>           → Enrollment successful
  *     ENROLL_FAIL              → Enrollment failed
  *     PLACE_FINGER             → Prompt to place finger
@@ -250,9 +255,25 @@ void scanFingerprint() {
   
   if (result == FINGERPRINT_OK) {
     // ── Match found ─────────────────────────────────
+    // MATCH:<id>:<confidence>
+    //
+    // fingerSearch() above populates BOTH finger.fingerID and
+    // finger.confidence (Adafruit_Fingerprint.cpp:377-382). The sensor
+    // computes the match score internally; earlier firmware simply discarded
+    // it. Reporting it is what lets the host do score-level fusion instead of
+    // treating the fingerprint as a bare yes/no.
+    //
+    // Note this exports a *score*, never a template or an image: no biometric
+    // data leaves the sensor. See docs/fusion_architecture.md, step 2b.
+    //
+    // Backward compatible in both directions. A host that splits on ":" and
+    // reads field 1 still gets the ID from "MATCH:12:145"; a new host reading
+    // field 2 from old firmware simply finds it absent and records no score.
     Serial.print("MATCH:");
-    Serial.println(finger.fingerID);
-    
+    Serial.print(finger.fingerID);
+    Serial.print(":");
+    Serial.println(finger.confidence);
+
     // Blink LED to indicate success
     blinkLED(2, 100);
   } else if (result == FINGERPRINT_NOTFOUND) {

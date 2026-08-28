@@ -58,6 +58,9 @@ class ATMInterface:
         self.db = DatabaseManager()
         self.pin_value = ""
         self.pin_callback_result = None
+        # Per-frame confidences behind the accepted face match, kept for
+        # score-level fusion. Nothing reads this yet.
+        self.last_face_confirmations: list = []
         self.pin_event = threading.Event()
 
         # Fingerprint dialog state (software mode)
@@ -545,6 +548,15 @@ class ATMInterface:
                             if len(confirmations[uid]) >= required_confirmations:
                                 face_id = uid
                                 face_confidence = np.mean(confirmations[uid])
+                                # Keep the individual readings, not just their
+                                # mean. Five tightly-agreeing confirmations are
+                                # better evidence than five scattered ones that
+                                # average the same, and that spread is a
+                                # quality signal for score-level fusion. Stored
+                                # rather than reduced here so the statistic can
+                                # be chosen where it is consumed.
+                                self.last_face_confirmations = list(
+                                    confirmations[uid])
                                 break
                 time.sleep(0.05)
 

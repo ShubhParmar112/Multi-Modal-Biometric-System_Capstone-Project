@@ -46,6 +46,10 @@ class FingerprintImageMatcher:
         self.templates: Dict[int, Dict[str, Any]] = {}
         self.is_loaded = False
         self._next_id = 1
+        # Raw measurements from the most recent match(), for score-level
+        # fusion. Populated as a side effect so match()'s return shape — which
+        # ui/atm_interface.py:649 unpacks — stays exactly as it was.
+        self.last_match_details: Dict[str, Any] = {}
 
     # ═══════════════════════════════════════════════════════════
     # IMAGE PREPROCESSING
@@ -184,6 +188,36 @@ class FingerprintImageMatcher:
     # MATCHING
     # ═══════════════════════════════════════════════════════════
 
+    def match_detailed(self, image_path: str, threshold: int = None):
+        """
+        As match(), but returns everything measured.
+
+        Returns:
+            FingerprintObservation carrying the raw good-match count and the
+            probe's SIFT keypoint count alongside the verdict.
+
+        The good-match count is the quantity with a meaningful distribution;
+        `confidence` is a bounded ratio derived from it against the threshold,
+        which destroys information above 2x threshold. Step 4 normalises the
+        raw count, not the ratio.
+
+        Nothing on the live authentication path calls this yet.
+        """
+        from auth.fusion.quality import fingerprint_quality
+        from auth.fusion.scores import FingerprintObservation
+
+        fp_id, is_match, confidence = self.match(image_path, threshold)
+        details = self.last_match_details
+        return FingerprintObservation(
+            fingerprint_id=fp_id,
+            is_match=is_match,
+            confidence=confidence,
+            match_score=details.get("good_matches"),
+            source="software",
+            quality=fingerprint_quality(
+                keypoint_count=details.get("probe_keypoints")),
+        )
+
     def match(self, image_path: str,
               threshold: int = None) -> Tuple[Optional[int], bool, float]:
         """
@@ -201,6 +235,7 @@ class FingerprintImageMatcher:
             Tuple of (fingerprint_id or None, is_match, confidence 0-1)
         """
         threshold = threshold or config.FINGERPRINT_MATCH_THRESHOLD
+        self.last_match_details = {}
 
         img = cv2.imread(image_path)
         if img is None:
@@ -248,6 +283,16 @@ class FingerprintImageMatcher:
 
         # Calculate confidence as ratio of score to threshold
         confidence = min(best_score / max(threshold * 2, 1), 1.0)
+
+        # Keep the raw measurements. `confidence` saturates at 2x threshold, so
+        # by itself it cannot distinguish a good match from an excellent one —
+        # exactly the resolution score-level fusion needs.
+        self.last_match_details = {
+            "good_matches": int(best_score),
+            "probe_keypoints": len(probe_kps),
+            "threshold": int(threshold),
+            "templates_compared": len(self.templates),
+        }
 
         if best_score >= threshold:
             user_id = self.templates[best_fp_id]['user_id']

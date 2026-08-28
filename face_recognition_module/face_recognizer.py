@@ -94,10 +94,44 @@ class FaceRecognizer:
         Returns:
             Tuple of (user_id or None, confidence 0-1, face_location or None)
             face_location is (top, right, bottom, left) to match original API
+
+        Behaviour and cost are unchanged. The richer measurements the same
+        computation produces are available from recognize_from_frame_detailed()
+        without affecting this path.
         """
+        return self._recognize(frame, with_quality=False).as_tuple()
+
+    def recognize_from_frame_detailed(self, frame: np.ndarray):
+        """
+        As recognize_from_frame(), but returns everything that was measured.
+
+        Returns:
+            FaceObservation — the decision plus the values the tuple API drops:
+            the raw cosine distance, the detector score, the vote fraction, how
+            many gallery embeddings matched, and sample quality.
+
+        The raw distance is the important one. It, not the blended confidence,
+        is the quantity with a measured genuine/impostor distribution
+        (evaluation/output/face_eval_report.md), so it is what step 4 maps to a
+        likelihood ratio. The blended confidence is retained only because it is
+        what users and the high-risk floor currently see.
+
+        Nothing on the live authentication path calls this yet.
+        """
+        return self._recognize(frame, with_quality=True)
+
+    def _recognize(self, frame: np.ndarray, with_quality: bool = False):
+        """Shared implementation behind both public recognition methods.
+
+        `with_quality` gates the extra image measurements so the legacy path
+        costs exactly what it did before this method existed — the ATM runs
+        recognition in a loop, and quality is only needed where it is consumed.
+        """
+        from auth.fusion.scores import FaceObservation
+
         if not self.is_loaded:
             logger.error("Encodings not loaded. Call load_encodings() first.")
-            return None, 0.0, None
+            return FaceObservation()
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         app = self._get_app()
@@ -105,14 +139,14 @@ class FaceRecognizer:
 
         if not faces:
             self._last_result = (None, 0.0, None)
-            return None, 0.0, None
+            return FaceObservation()
 
         # Filter by detection confidence
         faces = [f for f in faces
                  if f.det_score >= config.MIN_FACE_CONFIDENCE]
         if not faces:
             self._last_result = (None, 0.0, None)
-            return None, 0.0, None
+            return FaceObservation()
 
         # Use the largest face if multiple detected
         face = max(faces,
@@ -125,14 +159,27 @@ class FaceRecognizer:
         x1, y1, x2, y2 = face.bbox.astype(int)
         face_loc = (y1, x2, y2, x1)
 
+        quality = {}
+        if with_quality:
+            from auth.fusion.quality import face_quality
+            quality = face_quality(frame, face.bbox, float(face.det_score))
+
+        observation = FaceObservation(
+            face_location=face_loc,
+            det_score=float(face.det_score),
+            quality=quality,
+        )
+
         if len(self.known_encodings) == 0:
             self._last_result = (None, 0.0, face_loc)
-            return None, 0.0, face_loc
+            return observation
 
         distances = self._cosine_distances(self.known_encodings, probe)
         best_idx = int(np.argmin(distances))
         best_distance = float(distances[best_idx])
         confidence = round(1.0 - best_distance, 4)
+
+        observation.raw_distance = best_distance
 
         if best_distance <= config.FACE_RECOGNITION_TOLERANCE:
             user_id = self.known_ids[best_idx]
@@ -152,6 +199,9 @@ class FaceRecognizer:
                     confidence * 0.6 + vote_confidence * 0.4, 4
                 )
 
+                observation.vote_confidence = vote_confidence
+                observation.n_matching = int(matches.sum())
+
                 if final_confidence < config.MIN_FACE_CONFIDENCE:
                     result = (None, final_confidence, face_loc)
                 else:
@@ -162,7 +212,8 @@ class FaceRecognizer:
             result = (None, confidence, face_loc)
 
         self._last_result = result
-        return result
+        observation.user_id, observation.confidence = result[0], result[1]
+        return observation
 
     def annotate_frame(self, frame: np.ndarray) -> np.ndarray:
         """Draw the most recent recognition result onto a frame without
