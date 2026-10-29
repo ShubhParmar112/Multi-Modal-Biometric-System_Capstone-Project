@@ -1,4 +1,4 @@
-"""Pydantic request/response models for the SmartBank API."""
+"""Pydantic request/response models for the NoryvX API."""
 
 from typing import List, Optional
 from pydantic import BaseModel
@@ -49,7 +49,7 @@ class ThemeRequest(BaseModel):
 
 
 class AccessGrantRequest(BaseModel):
-    account_number: str  # the beneficiary's SmartBank account number
+    account_number: str  # the beneficiary's NoryvX account number
 
 
 class TokenResponse(BaseModel):

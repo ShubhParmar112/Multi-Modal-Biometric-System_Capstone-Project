@@ -11,7 +11,10 @@ export default function Navbar() {
   return (
     <>
       <nav className="navbar">
-        <div className="navbar-brand">🏦 SmartBank</div>
+        <div className="navbar-brand">
+          <img src="/noryvx-mark.png" alt="" className="navbar-logo" />
+          <span>NoryvX</span>
+        </div>
         <div className="navbar-links">
           <NavLink to="/dashboard" className="navbar-link">Dashboard</NavLink>
           <NavLink to="/transactions" className="navbar-link">Transactions</NavLink>

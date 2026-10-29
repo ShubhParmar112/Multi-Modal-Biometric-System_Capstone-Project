@@ -65,7 +65,8 @@ class BankerInterface:
         ctk.set_default_color_theme("dark-blue")
 
         self.root = ctk.CTk()
-        self.root.title("SecureATM - Banker Console")
+        self.root.title(f"{config.BRAND_NAME} - Banker Console")
+        window_utils.set_brand_icon(self.root)
         self.root.geometry(f"{config.WINDOW_WIDTH}x{config.WINDOW_HEIGHT}")
         self.root.minsize(config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
         self.root.configure(fg_color=BG)
@@ -105,32 +106,18 @@ class BankerInterface:
         header.pack(fill="x")
         header.pack_propagate(False)
 
-        # Left: shield avatar + title
+        # Left: NoryvX logo lockup + console subtitle
         left = ctk.CTkFrame(header, fg_color="transparent")
         left.pack(side="left", padx=36, pady=20)
-
-        avatar = ctk.CTkFrame(left, width=58, height=58, corner_radius=29,
-                              fg_color=_blend(HEADER_BG, ACCENT, 0.22),
-                              border_width=1,
-                              border_color=_blend(HEADER_BG, ACCENT, 0.5))
-        avatar.pack(side="left", padx=(0, 16))
-        avatar.pack_propagate(False)
-        ctk.CTkLabel(
-            avatar, text="", fg_color="transparent",
-            image=self._icon_image("selftest", ACCENT, px=30)
-        ).pack(expand=True)
 
         text_col = ctk.CTkFrame(left, fg_color="transparent")
         text_col.pack(side="left")
 
-        ctk.CTkLabel(
-            text_col, text="Banker Console",
-            font=ctk.CTkFont(family=config.FONT_FAMILY, size=28, weight="bold"),
-            text_color=TEXT, anchor="w"
-        ).pack(anchor="w")
+        window_utils.brand_header(text_col, px=52, name_size=30).pack(anchor="w")
 
         ctk.CTkLabel(
-            text_col, text="Branch operations — enrollment, diagnostics & maintenance",
+            text_col, text="Banker Console  •  Branch operations — enrollment, "
+                           "diagnostics & maintenance",
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=13),
             text_color=MUTED, anchor="w"
         ).pack(anchor="w", pady=(2, 0))

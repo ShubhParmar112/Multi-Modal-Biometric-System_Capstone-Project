@@ -187,8 +187,8 @@ export default function Login() {
   return (
     <div className="centered-page">
       <div className="card login-card">
-        <div className="login-logo">🏦</div>
-        <h1 className="login-title">SmartBank</h1>
+        <img src="/noryvx-mark.png" alt="NoryvX logo" className="login-logo" />
+        <h1 className="login-title">NoryvX</h1>
         <p className="login-subtitle">Secure Online Banking Portal</p>
 
         {!twoFa && (

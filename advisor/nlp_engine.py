@@ -173,7 +173,7 @@ def _market_snapshot() -> str:
 # ── LLM call ─────────────────────────────────────────────────────────────────
 
 _SYSTEM = """\
-You are SmartBank's AI Financial Advisor — a helpful, concise expert on the \
+You are NoryvX's AI Financial Advisor — a helpful, concise expert on the \
 user's personal finances. You have access to their real account data below.
 
 STRICT SCOPE — read carefully:

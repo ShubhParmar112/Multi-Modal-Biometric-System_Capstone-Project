@@ -1,1 +1,1 @@
-# SmartBank web app package
+# NoryvX web app package

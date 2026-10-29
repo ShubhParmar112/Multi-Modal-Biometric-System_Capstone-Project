@@ -142,7 +142,7 @@ def add_beneficiary(req: BeneficiaryRequest, user=Depends(get_current_user),
     account = db.get_account_by_number(account_number)
     if not account:
         raise HTTPException(status_code=404,
-                            detail="No SmartBank account with that number")
+                            detail="No NoryvX account with that number")
     if account["user_id"] == user["user_id"]:
         raise HTTPException(status_code=400,
                             detail="You cannot add your own account as a beneficiary")
@@ -180,7 +180,7 @@ def shared_with_me(user=Depends(get_current_user),
 @router.post("/access-grants")
 def add_access_grant(req: AccessGrantRequest, user=Depends(get_current_user),
                      db: DatabaseManager = Depends(get_db)):
-    """Give the holder of a SmartBank account read access to my data
+    """Give the holder of a NoryvX account read access to my data
     (holdings, transactions, analytics, portfolio)."""
     account_number = req.account_number.strip()
     if not account_number.isdigit():
@@ -189,7 +189,7 @@ def add_access_grant(req: AccessGrantRequest, user=Depends(get_current_user),
     account = db.get_account_by_number(account_number)
     if not account:
         raise HTTPException(status_code=404,
-                            detail="No SmartBank account with that number")
+                            detail="No NoryvX account with that number")
     grantee_id = account["user_id"]
     if grantee_id == user["user_id"]:
         raise HTTPException(status_code=400,

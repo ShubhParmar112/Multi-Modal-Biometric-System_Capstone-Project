@@ -38,6 +38,7 @@ class ATMInterface:
         # ── Main Window ──────────────────────────────────────
         self.root = ctk.CTk()
         self.root.title(config.WINDOW_TITLE)
+        window_utils.set_brand_icon(self.root)
         self.root.geometry(f"{config.WINDOW_WIDTH}x{config.WINDOW_HEIGHT}")
         # Allow resizing so the native maximize button is active; keep the
         # design size as the minimum so the layout never gets clipped.
@@ -111,16 +112,7 @@ class ATMInterface:
         title_frame = ctk.CTkFrame(header, fg_color="transparent")
         title_frame.pack(side="left", padx=20, pady=10)
 
-        ctk.CTkLabel(
-            title_frame, text="🏦",
-            font=ctk.CTkFont(size=28)
-        ).pack(side="left", padx=(0, 8))
-
-        ctk.CTkLabel(
-            title_frame, text="SecureATM",
-            font=ctk.CTkFont(family=config.FONT_FAMILY, size=22, weight="bold"),
-            text_color=config.PRIMARY_COLOR
-        ).pack(side="left")
+        window_utils.brand_header(title_frame, px=40, name_size=22).pack(side="left")
 
         ctk.CTkLabel(
             title_frame, text="Biometric Authentication System",

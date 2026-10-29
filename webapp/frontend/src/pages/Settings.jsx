@@ -457,7 +457,7 @@ function BeneficiariesSection() {
                    placeholder="e.g. Mom" required />
           </div>
           <div>
-            <label className="field-label">SmartBank Account Number</label>
+            <label className="field-label">NoryvX Account Number</label>
             <input className="input" value={accountNumber}
                    onChange={(e) => setAccountNumber(e.target.value)}
                    placeholder="12-digit account number" required />
@@ -500,7 +500,7 @@ function BeneficiariesSection() {
       <form className="card" onSubmit={handleAddGrant}>
         <h2>Data Access</h2>
         <p className="muted" style={{ fontSize: 13 }}>
-          Give the holder of another SmartBank account <strong>read-only</strong>{" "}
+          Give the holder of another NoryvX account <strong>read-only</strong>{" "}
           access to your data — holdings, transactions, analytics and
           portfolio. They'll get a "View account" switcher after their next
           sign-in. You can revoke at any time.

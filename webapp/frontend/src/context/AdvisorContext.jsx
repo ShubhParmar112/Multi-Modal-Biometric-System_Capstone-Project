@@ -8,7 +8,7 @@ import client from "../api/client";
 
 const WELCOME = {
   role: "assistant",
-  text: "Hi! I'm your SmartBank AI Financial Advisor. I have access to your real account data — ask me anything about your spending, savings, investments, or balance.",
+  text: "Hi! I'm your NoryvX AI Financial Advisor. I have access to your real account data — ask me anything about your spending, savings, investments, or balance.",
 };
 
 const AdvisorContext = createContext(null);

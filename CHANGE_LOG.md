@@ -5,6 +5,41 @@ changed, how it was verified, and what was left undone.
 
 ---
 
+## 2026-10-30 — Unified NoryvX branding
+
+**Change.** The three setups each had their own name (ATM "SecureATM", banker
+console "Banker Console" with a shield, web app and e-mails "SmartBank").
+All now use one "logo + NoryvX" lockup in the brand orange.
+
+- `assets/branding/`: the original logo (`noryvx_logo_source.jpg`) and
+  transparent cut-outs made from it: the full logo, the "N" mark
+  (504 px + 256 px) and a multi-size `.ico`. Alpha comes from the blue
+  channel (white background ≈ 254, orange ≈ 2), so edges stay smooth with
+  no white fringe on dark backgrounds.
+- `config.py`: `BRAND_NAME`, `BRAND_COLOR`, logo paths. The window title
+  and e-mail sender name are built from them.
+- `ui/window_utils.py`: `brand_header()` (the shared lockup) and
+  `set_brand_icon()` (window/taskbar icon). Used by the ATM and banker
+  windows. The ATM dashboard footer shows NoryvX too.
+- E-mails: the header shows the mark and NoryvX. The mark is attached
+  inline as a CID image (`multipart/related`) because Gmail blocks
+  `data:` URIs. Subjects and footers now say NoryvX.
+- Web app: Navbar and Login use `/noryvx-mark.png`. The tab title is
+  NoryvX and the favicon is the mark. User-facing "SmartBank" strings
+  (Settings, advisor greeting and prompt, API errors) are renamed. The
+  `smartbank_*` localStorage keys are unchanged, so nobody gets logged out.
+
+**Verified.** smoke_test 23/23. All five `tests.*` modules pass. The e-mail
+MIME was built offline (logo part has the right Content-ID) and rendered.
+The ATM, ATM dashboard and banker windows were screenshotted. All six web
+pages had no console or server errors and no leftover "SmartBank", in
+light and dark themes. `vite build` passes.
+
+**Not done.** No real e-mail was sent. The live camera and fingerprint
+hardware were not exercised; this change does not touch them.
+
+---
+
 ## 2026-08-02 — Require a blink on the face step-up
 
 **Problem.** `/api/auth/face-verify` took a single frame and matched it, with

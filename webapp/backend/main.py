@@ -1,5 +1,5 @@
 """
-SmartBank Web App API - FastAPI backend.
+NoryvX Web App API - FastAPI backend.
 Everything except biometric authentication (which lives in the Tkinter
 ATM app) — accounts, transactions, analytics, fraud visibility, and
 portfolio optimization.
@@ -29,7 +29,7 @@ from webapp.backend.routers import (
     accounts, transactions, analytics, fraud, portfolio, advisor, settings
 )
 
-app = FastAPI(title="SmartBank API")
+app = FastAPI(title="NoryvX API")
 
 
 @app.on_event("startup")

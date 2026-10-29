@@ -12,11 +12,16 @@ Configuration lives in config.py (SMTP_* values, read from .env).
 import smtplib
 import threading
 from datetime import datetime
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import config
 from utils.logger import logger
+
+# Content-ID the HTML header uses to reference the inline logo attachment.
+# (Gmail and most clients block data: URIs, so the mark ships as a CID part.)
+_LOGO_CID = "noryvx-logo"
 
 
 def _format_inr(amount: float) -> str:
@@ -26,13 +31,20 @@ def _format_inr(amount: float) -> str:
 def _email_shell(name: str, intro_line: str, amount_color: str,
                  amount_html: str, amount_caption: str,
                  table_rows_html: str, footer_warning: str) -> str:
-    """Shared dark SmartBank card shell used by all alert mails."""
+    """Shared dark NoryvX card shell used by all alert mails."""
     return f"""
     <div style="background:#0B1020;padding:32px 16px;font-family:'Segoe UI',Arial,sans-serif;">
       <div style="max-width:520px;margin:0 auto;background:#161C30;border:1px solid #2A3A5C;
                   border-radius:14px;overflow:hidden;">
         <div style="padding:20px 28px;border-bottom:1px solid #2A3A5C;">
-          <span style="font-size:19px;font-weight:800;color:#00D4AA;">&#127974; SmartBank</span>
+          <table role="presentation" style="border-collapse:collapse;"><tr>
+            <td style="padding:0 10px 0 0;vertical-align:middle;">
+              <img src="cid:{_LOGO_CID}" width="32" height="32" alt=""
+                   style="display:block;border:0;">
+            </td>
+            <td style="vertical-align:middle;font-size:20px;font-weight:800;
+                       color:{config.BRAND_COLOR};">{config.BRAND_NAME}</td>
+          </tr></table>
         </div>
         <div style="padding:28px;">
           <p style="color:#E8EDF4;margin:0 0 6px;">Hi {name},</p>
@@ -81,7 +93,7 @@ def _build_transaction_html(name: str, txn_type: str, direction: str,
                             amount: float, balance: float,
                             account_number: str, category: str,
                             counterparty: str = None) -> str:
-    """Dark-themed HTML matching the SmartBank web app styling."""
+    """Dark-themed HTML matching the NoryvX web app styling."""
     is_credit = direction == "credit"
     color = "#00D4AA" if is_credit else "#FF5470"
     sign = "+" if is_credit else "−"
@@ -104,18 +116,14 @@ def _build_transaction_html(name: str, txn_type: str, direction: str,
         txn_type.replace('_', ' '),
         rows,
         "If you did not authorize this transaction, "
-        "contact SmartBank support immediately.",
+        f"contact {config.BRAND_NAME} support immediately.",
     )
 
 
 def _send(to_address: str, subject: str, html_body: str):
     """Blocking SMTP send — always called from a daemon thread."""
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"{config.EMAIL_FROM_NAME} <{config.SMTP_USER}>"
-        msg["To"] = to_address
-        msg.attach(MIMEText(html_body, "html"))
+        msg = _build_message(to_address, subject, html_body)
 
         with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=20) as server:
             server.starttls()
@@ -126,10 +134,28 @@ def _send(to_address: str, subject: str, html_body: str):
         logger.error(f"Failed to send email to {to_address}: {e}")
 
 
+def _build_message(to_address: str, subject: str, html_body: str) -> MIMEMultipart:
+    """multipart/related: the HTML body plus the inline logo it references."""
+    msg = MIMEMultipart("related")
+    msg["Subject"] = subject
+    msg["From"] = f"{config.EMAIL_FROM_NAME} <{config.SMTP_USER}>"
+    msg["To"] = to_address
+    msg.attach(MIMEText(html_body, "html"))
+    try:
+        with open(config.LOGO_MARK_SMALL_PATH, "rb") as f:
+            logo = MIMEImage(f.read(), "png")
+        logo.add_header("Content-ID", f"<{_LOGO_CID}>")
+        logo.add_header("Content-Disposition", "inline", filename="noryvx.png")
+        msg.attach(logo)
+    except OSError as e:
+        logger.warning(f"Email logo missing ({e}) — sending without it")
+    return msg
+
+
 def _build_trade_html(name: str, action: str, ticker: str,
                       security_name: str, quantity: float, price: float,
                       remaining_qty) -> str:
-    """Trade confirmation mail, same dark SmartBank styling."""
+    """Trade confirmation mail, same dark NoryvX styling."""
     is_buy = action == "BUY"
     color = "#00D4AA" if is_buy else "#FF5470"
     total = quantity * price
@@ -149,7 +175,7 @@ def _build_trade_html(name: str, action: str, ticker: str,
         ticker,
         rows,
         "If you did not authorize this trade, "
-        "contact SmartBank support immediately.",
+        f"contact {config.BRAND_NAME} support immediately.",
     )
 
 
@@ -172,7 +198,7 @@ def send_trade_email(user: dict, action: str, ticker: str,
                        f"trade email to {email} skipped (set them in .env)")
         return
 
-    subject = f"SmartBank Trade Confirmation: {action} {quantity:g} {ticker}"
+    subject = f"{config.BRAND_NAME} Trade Confirmation: {action} {quantity:g} {ticker}"
     html = _build_trade_html(user.get("name", "Customer"), action, ticker,
                              security_name, quantity, price, remaining_qty)
     threading.Thread(
@@ -209,7 +235,7 @@ def send_transaction_email(user: dict, txn_type: str, direction: str,
         return
 
     action = "credited" if direction == "credit" else "debited"
-    subject = f"SmartBank Alert: {_format_inr(amount)} {action}"
+    subject = f"{config.BRAND_NAME} Alert: {_format_inr(amount)} {action}"
     html = _build_transaction_html(
         user.get("name", "Customer"), txn_type, direction, amount,
         balance, account_number, category, counterparty

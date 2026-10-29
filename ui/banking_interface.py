@@ -412,7 +412,7 @@ class BankingInterface:
         self.status_label.pack(side="left", expand=True)
 
         ctk.CTkLabel(
-            footer, text="SecureATM  •  Contact Center: 1800-000-0000",
+            footer, text=f"{config.BRAND_NAME}  •  Contact Center: 1800-000-0000",
             font=ctk.CTkFont(family=config.FONT_FAMILY, size=11),
             text_color=MUTED
         ).pack(side="right", padx=24)

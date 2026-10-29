@@ -25,6 +25,17 @@ DATABASE_PATH = os.path.join(BASE_DIR, "database", "users.db")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 # ============================================================
+# BRANDING
+# ============================================================
+# One brand across the ATM, banker console, web app and alert e-mails.
+BRAND_NAME = "NoryvX"
+BRAND_COLOR = "#FC7C02"               # Logo orange
+BRANDING_DIR = os.path.join(BASE_DIR, "assets", "branding")
+LOGO_MARK_PATH = os.path.join(BRANDING_DIR, "noryvx_mark.png")      # transparent "N" mark
+LOGO_MARK_SMALL_PATH = os.path.join(BRANDING_DIR, "noryvx_mark_256.png")
+LOGO_ICO_PATH = os.path.join(BRANDING_DIR, "noryvx.ico")            # window icon
+
+# ============================================================
 # FACE RECOGNITION SETTINGS
 # ============================================================
 # InsightFace (ArcFace) uses cosine distance on L2-normalised 512-d embeddings.
@@ -171,7 +182,7 @@ SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-EMAIL_FROM_NAME = "SmartBank Alerts"
+EMAIL_FROM_NAME = f"{BRAND_NAME} Alerts"
 
 # ============================================================
 # WEB APP SETTINGS
@@ -258,7 +269,7 @@ PORTFOLIO_PICKS_TIMEOUT = 30          # Seconds for the live ticker quote batch
 # ============================================================
 # UI SETTINGS
 # ============================================================
-WINDOW_TITLE = "SecureATM - Biometric Authentication"
+WINDOW_TITLE = f"{BRAND_NAME} - Biometric Authentication"
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
 THEME_MODE = "dark"                   # "dark" or "light"
