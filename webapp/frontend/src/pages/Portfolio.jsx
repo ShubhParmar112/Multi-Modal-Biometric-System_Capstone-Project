@@ -24,10 +24,6 @@ const ASSET_LABELS = {
   fd: "FD", cash: "Cash", mutual_funds: "Mutual Funds",
 };
 
-const SECTION_ICONS = {
-  equity: "📈", mutual_funds: "🏦", gold: "🥇", debt: "📋", fd: "🏛️",
-};
-
 // Each pick section is tinted with a very soft pastel of the same colour that
 // asset gets in the allocation pie chart, so the section and its pie slice
 // read as the same asset at a glance.
@@ -72,10 +68,9 @@ function ChangeChip({ value }) {
   );
 }
 
-function SectionHeader({ icon, title, pct }) {
+function SectionHeader({ title, pct }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-      <span style={{ fontSize: 22 }}>{icon}</span>
       <div>
         <h2 style={{ margin: 0, fontSize: 17 }}>{title}</h2>
         <span className="muted" style={{ fontSize: 12 }}>
@@ -424,7 +419,7 @@ export default function Portfolio() {
               {/* ── EQUITY ─────────────────────────────────────────────── */}
               {alloc.equity_pct > 0 && picks.equity.length > 0 && (
                 <div className="card" style={softCard(ASSET_SECTION_COLORS.equity)}>
-                  <SectionHeader icon={SECTION_ICONS.equity}
+                  <SectionHeader
                     title={`Equity — Top NSE Picks for ${profile.risk_appetite.charAt(0).toUpperCase() + profile.risk_appetite.slice(1)} Risk (Live)`}
                     pct={alloc.equity_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
@@ -472,7 +467,7 @@ export default function Portfolio() {
               {/* ── MUTUAL FUNDS ────────────────────────────────────────── */}
               {alloc.mutual_funds_pct > 0 && picks.mutual_funds.length > 0 && (
                 <div className="card" style={softCard(ASSET_SECTION_COLORS.mutual_funds)}>
-                  <SectionHeader icon={SECTION_ICONS.mutual_funds}
+                  <SectionHeader
                     title={`Mutual Funds — ${profile.risk_appetite.charAt(0).toUpperCase() + profile.risk_appetite.slice(1)}-Risk Picks`}
                     pct={alloc.mutual_funds_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
@@ -519,7 +514,7 @@ export default function Portfolio() {
               {/* ── GOLD ────────────────────────────────────────────────── */}
               {alloc.gold_pct > 0 && picks.gold.length > 0 && (
                 <div className="card" style={softCard(ASSET_SECTION_COLORS.gold)}>
-                  <SectionHeader icon={SECTION_ICONS.gold}
+                  <SectionHeader
                     title="Gold — ETFs &amp; Sovereign Gold Bonds (Live)"
                     pct={alloc.gold_pct} />
                   <div style={{ overflowX: "auto" }}>
@@ -567,7 +562,7 @@ export default function Portfolio() {
               {/* ── DEBT ────────────────────────────────────────────────── */}
               {alloc.debt_pct > 0 && (
                 <div className="card" style={softCard(ASSET_SECTION_COLORS.debt)}>
-                  <SectionHeader icon={SECTION_ICONS.debt}
+                  <SectionHeader
                     title="Debt — Exchange-Traded Fixed Income (Live)"
                     pct={alloc.debt_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
@@ -610,7 +605,7 @@ export default function Portfolio() {
               {/* ── FIXED DEPOSITS ───────────────────────────────────────── */}
               {alloc.fd_pct > 0 && (
                 <div className="card" style={softCard(ASSET_SECTION_COLORS.fd)}>
-                  <SectionHeader icon={SECTION_ICONS.fd}
+                  <SectionHeader
                     title="Fixed Deposits — Our FD Rates (Live)"
                     pct={alloc.fd_pct} />
                   <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>

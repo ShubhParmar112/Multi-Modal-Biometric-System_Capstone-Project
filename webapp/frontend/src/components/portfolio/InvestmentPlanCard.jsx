@@ -3,11 +3,6 @@ import client from "../../api/client";
 
 const fmtINR = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
 
-const BUCKET_ICONS = {
-  equity: "📈", mutual_funds: "🏦", gold: "🥇",
-  debt: "📋", fd: "🏛️", cash: "💵",
-};
-
 // Smart Investment Plan: converts the recommended percentages into exact
 // whole-unit purchases from the live picks. Re-fetches on `refreshKey`.
 export default function InvestmentPlanCard({ refreshKey }) {
@@ -47,7 +42,6 @@ export default function InvestmentPlanCard({ refreshKey }) {
       {plan.buckets.map(bucket => (
         <div key={bucket.asset} style={{ marginBottom: 18 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
-            <span>{BUCKET_ICONS[bucket.asset]}</span>
             <strong>{bucket.label}</strong>
             <span className="muted" style={{ fontSize: 12 }}>
               {bucket.pct}% → {fmtINR(bucket.amount)}

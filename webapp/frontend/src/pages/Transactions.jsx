@@ -242,7 +242,7 @@ export default function Transactions() {
         <>
           <div className="grid-3">
             <form className="card" onSubmit={handleDeposit}>
-              <h2>💰 Deposit</h2>
+              <h2>Deposit</h2>
               <label className="field-label">Amount</label>
               <input
                 className="input" type="number" min="0.01" step="0.01" required
@@ -252,7 +252,7 @@ export default function Transactions() {
             </form>
 
             <form className="card" onSubmit={handleWithdraw}>
-              <h2>💸 Withdraw</h2>
+              <h2>Withdraw</h2>
               <label className="field-label">Amount</label>
               <input
                 className="input" type="number" min="0.01" step="0.01" required
@@ -269,7 +269,7 @@ export default function Transactions() {
             </form>
 
             <form className="card" onSubmit={handleTransfer}>
-              <h2>🔁 Transfer</h2>
+              <h2>Transfer</h2>
               {beneficiaries.length > 0 && (
                 <>
                   <label className="field-label">Beneficiary</label>
