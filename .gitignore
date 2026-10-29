@@ -18,3 +18,4 @@ PROJECT_SUMMARY.md
 # Regenerable evaluation artifacts (figures, sweeps, extraction cache).
 # Collected measurements live in evaluation/data/ and ARE tracked.
 evaluation/output/
+database/
