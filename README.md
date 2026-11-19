@@ -9,11 +9,12 @@
 
 This project implements a **three-factor authentication pipeline** that combines:
 
-1. **Face Recognition** (Computer Vision — OpenCV + face_recognition)
+1. **Face Recognition** (InsightFace — ArcFace `buffalo_l`, 512-d embeddings)
 2. **Fingerprint Authentication** (R307S sensor + ESP32 via UART)
 3. **PIN Verification** (Knowledge-based factor)
 
-With **anti-spoofing** via liveness detection (blink detection using Eye Aspect Ratio).
+With **anti-spoofing** via liveness detection (blink detection using the Eye Aspect Ratio
+over MediaPipe's 478-landmark face mesh).
 
 ### Authentication Pipeline
 
@@ -48,7 +49,7 @@ try1/
 ├── face_recognition_module/         # Computer Vision subsystem
 │   ├── __init__.py
 │   ├── dataset_collector.py         # Webcam-based face image capture
-│   ├── face_encoder.py              # Generate 128-d face encodings
+│   ├── face_encoder.py              # Generate 512-d ArcFace embeddings
 │   ├── face_recognizer.py           # Real-time face identification
 │   └── liveness_detector.py         # Anti-spoofing (blink detection)
 │
@@ -115,9 +116,10 @@ try1/
 | Component | Technology | Purpose |
 |:----------|:-----------|:--------|
 | Backend | Python 3.8+ | Main processing |
-| Face Detection | OpenCV (Haar/HOG) | Detect faces in frames |
-| Face Recognition | face_recognition (dlib) | 128-d embeddings |
-| Anti-Spoofing | EAR Blink Detection | Liveness verification |
+| Face Detection | InsightFace `buffalo_l` | Detect faces in frames |
+| Face Recognition | InsightFace ArcFace (`buffalo_l`) | 512-d embeddings, cosine distance |
+| Inference | ONNX Runtime (CPU) | Backend for InsightFace |
+| Anti-Spoofing | MediaPipe Face Landmarker + EAR | Liveness verification |
 | Serial Comm | PySerial | ESP32 communication |
 | Database | SQLite3 | User records + audit log |
 | UI | CustomTkinter | ATM simulation interface |
@@ -195,7 +197,7 @@ python main.py --banker            → Launch the banker console (staff UI
 users (
     user_id        TEXT PRIMARY KEY,    -- e.g., "USR001"
     name           TEXT NOT NULL,       -- "John Doe"
-    face_encoding  BLOB,               -- 128-d numpy array (pickled)
+    face_encoding  BLOB,               -- 512-d ArcFace vector (pickled)
     fingerprint_id INTEGER UNIQUE,     -- R307S sensor ID (1-127)
     pin_hash       TEXT NOT NULL,       -- SHA-256 hashed PIN
     created_at     TIMESTAMP,
@@ -247,7 +249,7 @@ auth_logs (
 - Web sessions signed with `JWT_SECRET` — set it in `.env` (see `.env.example`).
   Left unset, a random per-machine key is generated into `.jwt_secret`; the app
   warns at startup and the key must not be relied on for a deployment.
-- Face encodings are 128-d vectors (cannot reconstruct face)
+- Face embeddings are 512-d ArcFace vectors (cannot reconstruct face)
 - All processing done locally (no cloud, no internet)
 - Audit trail for forensic analysis
 - Liveness detection prevents photo/video attacks
